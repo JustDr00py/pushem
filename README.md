@@ -50,6 +50,48 @@ Access the web interface at `http://localhost:8080`
 
 The database and VAPID keys will be persisted in the `./data` directory.
 
+### Production Setup with Caddy (Automatic HTTPS)
+
+For production deployments, use Caddy for automatic HTTPS with Let's Encrypt:
+
+1. **Edit the Caddyfile** and replace `pushem.example.com` with your domain:
+   ```bash
+   nano Caddyfile
+   # Change pushem.example.com to your actual domain
+   # Change admin@example.com to your email
+   ```
+
+2. **Make sure your domain points to your server** (DNS A record)
+
+3. **Run with Caddy enabled**:
+
+   ```bash
+   # Method 1: Using profiles (recommended)
+   docker-compose --profile caddy up -d
+
+   # Method 2: Using separate compose file
+   docker-compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+   ```
+
+4. **Access your site**:
+   - Your site will be available at `https://your-domain.com`
+   - Caddy automatically obtains and renews SSL certificates
+   - HTTP automatically redirects to HTTPS
+   - HTTP/3 support is enabled
+
+**Caddy Features:**
+- ✓ Automatic HTTPS with Let's Encrypt
+- ✓ Automatic certificate renewal
+- ✓ HTTP/2 and HTTP/3 support
+- ✓ Security headers (HSTS, CSP, etc.)
+- ✓ Gzip compression
+- ✓ Access logging
+
+**View Caddy logs:**
+```bash
+docker-compose logs -f caddy
+```
+
 ### Container Management
 
 ```bash

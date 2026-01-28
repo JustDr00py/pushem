@@ -13,3 +13,34 @@ services:
       - STATIC_DIR=../web/dist
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped
+    networks:
+      - pushem-network
+
+  # Optional Caddy reverse proxy with automatic HTTPS
+  # Enable with: docker-compose --profile caddy up -d
+  # Or: podman-compose --profile caddy up -d
+  caddy:
+    image: caddy:2-alpine
+    profiles:
+      - caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    networks:
+      - pushem-network
+    depends_on:
+      - pushem
+
+networks:
+  pushem-network:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:

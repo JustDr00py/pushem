@@ -1,0 +1,32 @@
+# Alternative Caddy configuration
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+
+version: '3.8'
+
+services:
+  pushem:
+    ports:
+      # Disable direct port mapping when using Caddy
+      - "8080"  # Only expose internally
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    networks:
+      - pushem-network
+    depends_on:
+      - pushem
+
+volumes:
+  caddy-data:
+  caddy-config:
