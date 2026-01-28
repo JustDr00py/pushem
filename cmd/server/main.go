@@ -80,7 +80,15 @@ func main() {
 	// Start message cleanup goroutine
 	startMessageCleanup(database)
 
-	handler := api.NewHandler(database, webpushService)
+	// Get admin password from environment
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+	if adminPassword == "" {
+		log.Println("Warning: ADMIN_PASSWORD not set. Admin panel will be disabled.")
+	} else {
+		log.Println("Admin panel enabled")
+	}
+
+	handler := api.NewHandler(database, webpushService, adminPassword)
 
 	r := chi.NewRouter()
 
@@ -120,6 +128,15 @@ func main() {
 	r.Delete("/history/{topic}", handler.ClearHistory)
 	r.Post("/topics/{topic}/protect", handler.ProtectTopic)
 
+	// Admin routes (protected by admin password)
+	r.Route("/api/admin", func(r chi.Router) {
+		r.Use(handler.RequireAdmin)
+		r.Post("/verify", handler.AdminVerifyPassword)
+		r.Get("/topics", handler.AdminListTopics)
+		r.Delete("/topics/{topic}", handler.AdminDeleteTopic)
+		r.Delete("/topics/{topic}/protection", handler.AdminUnprotectTopic)
+	})
+
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {
 		staticDir = "web/dist"
@@ -128,8 +145,13 @@ func main() {
 		log.Printf("Warning: Frontend directory '%s' not found. Frontend will not be available.", staticDir)
 	} else {
 		fileServer := http.FileServer(http.Dir(staticDir))
-		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-			http.StripPrefix("/", fileServer).ServeHTTP(w, r)
+		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+			// For /admin route, serve index.html (SPA)
+			if req.URL.Path == "/admin" || req.URL.Path == "/admin/" {
+				http.ServeFile(w, req, staticDir+"/index.html")
+				return
+			}
+			http.StripPrefix("/", fileServer).ServeHTTP(w, req)
 		})
 		log.Printf("Serving frontend from '%s'", staticDir)
 	}

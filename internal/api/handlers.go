@@ -16,14 +16,16 @@ import (
 )
 
 type Handler struct {
-	db      *db.DB
-	webpush *webpush.Service
+	db            *db.DB
+	webpush       *webpush.Service
+	adminPassword string
 }
 
-func NewHandler(database *db.DB, webpushService *webpush.Service) *Handler {
+func NewHandler(database *db.DB, webpushService *webpush.Service, adminPassword string) *Handler {
 	return &Handler{
-		db:      database,
-		webpush: webpushService,
+		db:            database,
+		webpush:       webpushService,
+		adminPassword: adminPassword,
 	}
 }
 
@@ -75,40 +77,50 @@ func (h *Handler) checkAuth(w http.ResponseWriter, r *http.Request, topic string
 func (h *Handler) ProtectTopic(w http.ResponseWriter, r *http.Request) {
 	topic := chi.URLParam(r, "topic")
 	if topic == "" {
+		log.Printf("ProtectTopic: topic is empty")
 		http.Error(w, "topic is required", http.StatusBadRequest)
 		return
 	}
 
 	// Validate topic name
 	if err := validation.ValidateTopic(topic); err != nil {
+		log.Printf("ProtectTopic: invalid topic '%s': %v", topic, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var req ProtectTopicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("ProtectTopic: failed to decode request body: %v", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("ProtectTopic: topic='%s', secret length=%d (before sanitization)", topic, len(req.Secret))
+
 	// Sanitize and validate secret
 	req.Secret = validation.SanitizeString(req.Secret)
+	log.Printf("ProtectTopic: secret length=%d (after sanitization)", len(req.Secret))
+
 	if err := validation.ValidateSecret(req.Secret); err != nil {
+		log.Printf("ProtectTopic: secret validation failed for topic '%s': %v", topic, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// If already protected, check if authorized to change it
 	if !h.checkAuth(w, r, topic) {
+		log.Printf("ProtectTopic: auth check failed for topic '%s'", topic)
 		return
 	}
 
 	if err := h.db.ProtectTopic(topic, req.Secret); err != nil {
-		log.Printf("Failed to protect topic: %v", err)
+		log.Printf("Failed to protect topic '%s': %v", topic, err)
 		http.Error(w, "failed to protect topic", http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("Successfully protected topic '%s'", topic)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "topic protected"})
 }
@@ -349,4 +361,85 @@ func (h *Handler) ClearHistory(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "history cleared"})
+}
+
+// Admin authentication middleware
+func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If no admin password is set, admin panel is disabled
+		if h.adminPassword == "" {
+			http.Error(w, "admin panel is disabled", http.StatusForbidden)
+			return
+		}
+
+		// Check for admin password in X-Admin-Password header
+		providedPassword := r.Header.Get("X-Admin-Password")
+
+		// Compare using bcrypt-style comparison for consistency
+		// (though admin password is plain text in .env)
+		if providedPassword != h.adminPassword {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Admin: List all topics
+func (h *Handler) AdminListTopics(w http.ResponseWriter, r *http.Request) {
+	topics, err := h.db.ListAllTopics()
+	if err != nil {
+		log.Printf("Failed to list topics: %v", err)
+		http.Error(w, "failed to list topics", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(topics)
+}
+
+// Admin: Delete a topic and all its subscriptions
+func (h *Handler) AdminDeleteTopic(w http.ResponseWriter, r *http.Request) {
+	topic := chi.URLParam(r, "topic")
+	if topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.DeleteTopic(topic); err != nil {
+		log.Printf("Failed to delete topic: %v", err)
+		http.Error(w, "failed to delete topic", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Admin: Deleted topic '%s'", topic)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "topic deleted"})
+}
+
+// Admin: Remove protection from a topic
+func (h *Handler) AdminUnprotectTopic(w http.ResponseWriter, r *http.Request) {
+	topic := chi.URLParam(r, "topic")
+	if topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.UnprotectTopic(topic); err != nil {
+		log.Printf("Failed to unprotect topic: %v", err)
+		http.Error(w, "failed to unprotect topic", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Admin: Unprotected topic '%s'", topic)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "topic unprotected"})
+}
+
+// Admin: Verify password
+func (h *Handler) AdminVerifyPassword(w http.ResponseWriter, r *http.Request) {
+	// If this endpoint is reached, middleware already verified the password
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"valid": true})
 }

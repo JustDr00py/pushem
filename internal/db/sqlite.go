@@ -224,3 +224,89 @@ func (db *DB) GetMessageCount() (int64, error) {
 func (db *DB) Close() error {
 	return db.conn.Close()
 }
+
+// TopicInfo contains information about a topic for admin purposes
+type TopicInfo struct {
+	Name              string `json:"name"`
+	IsProtected       bool   `json:"is_protected"`
+	SubscriptionCount int    `json:"subscription_count"`
+	MessageCount      int    `json:"message_count"`
+	CreatedAt         string `json:"created_at,omitempty"`
+}
+
+// ListAllTopics returns all topics with their metadata
+func (db *DB) ListAllTopics() ([]TopicInfo, error) {
+	// Get all unique topics from subscriptions
+	query := `
+		SELECT DISTINCT s.topic,
+			CASE WHEN t.secret IS NOT NULL THEN 1 ELSE 0 END as is_protected,
+			COUNT(s.id) as subscription_count,
+			t.created_at
+		FROM subscriptions s
+		LEFT JOIN topics t ON s.topic = t.topic
+		GROUP BY s.topic
+		ORDER BY s.topic ASC
+	`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var topics []TopicInfo
+	for rows.Next() {
+		var info TopicInfo
+		var createdAt sql.NullString
+		if err := rows.Scan(&info.Name, &info.IsProtected, &info.SubscriptionCount, &createdAt); err != nil {
+			return nil, err
+		}
+		if createdAt.Valid {
+			info.CreatedAt = createdAt.String
+		}
+
+		// Get message count for this topic
+		var msgCount int
+		msgErr := db.conn.QueryRow("SELECT COUNT(*) FROM messages WHERE topic = ?", info.Name).Scan(&msgCount)
+		if msgErr == nil {
+			info.MessageCount = msgCount
+		}
+
+		topics = append(topics, info)
+	}
+
+	return topics, rows.Err()
+}
+
+// DeleteTopic removes a topic and all associated data
+func (db *DB) DeleteTopic(topic string) error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete subscriptions
+	if _, err := tx.Exec("DELETE FROM subscriptions WHERE topic = ?", topic); err != nil {
+		return fmt.Errorf("failed to delete subscriptions: %w", err)
+	}
+
+	// Delete messages
+	if _, err := tx.Exec("DELETE FROM messages WHERE topic = ?", topic); err != nil {
+		return fmt.Errorf("failed to delete messages: %w", err)
+	}
+
+	// Delete topic protection
+	if _, err := tx.Exec("DELETE FROM topics WHERE topic = ?", topic); err != nil {
+		return fmt.Errorf("failed to delete topic: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// UnprotectTopic removes protection from a topic
+func (db *DB) UnprotectTopic(topic string) error {
+	query := `DELETE FROM topics WHERE topic = ?`
+	_, err := db.conn.Exec(query, topic)
+	return err
+}
