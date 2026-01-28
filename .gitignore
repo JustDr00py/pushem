@@ -12,6 +12,9 @@ pushem.db-journal
 # VAPID keys
 vapid_keys.json
 
+# Environment configuration
+.env
+
 # Go
 *.test
 *.out

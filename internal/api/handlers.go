@@ -1,11 +1,13 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"pushem/internal/db"
 	"pushem/internal/validation"
@@ -67,7 +69,8 @@ func (h *Handler) checkAuth(w http.ResponseWriter, r *http.Request, topic string
 		providedKey = r.URL.Query().Get("key")
 	}
 
-	if providedKey != secret {
+	// Use constant-time comparison to prevent timing attacks
+	if subtle.ConstantTimeCompare([]byte(providedKey), []byte(secret)) != 1 {
 		http.Error(w, "unauthorized: topic is protected", http.StatusUnauthorized)
 		return false
 	}
@@ -182,9 +185,18 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit request body size to prevent DoS (10 MB max)
+	const MaxBodySize = 10 * 1024 * 1024 // 10 MB
+	r.Body = http.MaxBytesReader(w, r.Body, MaxBodySize)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		// Check if error is due to size limit
+		if err.Error() == "http: request body too large" {
+			http.Error(w, "request body too large (max 10 MB)", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+		}
 		return
 	}
 
@@ -241,22 +253,42 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	sent := 0
 	failed := 0
 
-	for _, sub := range subscriptions {
-		err := h.webpush.SendNotification(sub.Endpoint, sub.P256dh, sub.Auth, payload)
-		if err != nil {
-			log.Printf("Failed to send notification to %s: %v", sub.Endpoint, err)
+	// Send notifications concurrently with limited parallelism
+	const MaxConcurrentPushes = 10
+	sem := make(chan struct{}, MaxConcurrentPushes)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
-			if strings.Contains(err.Error(), "410 Gone") {
-				log.Printf("Removing expired subscription: %s", sub.Endpoint)
-				if err := h.db.DeleteSubscription(sub.Endpoint); err != nil {
-					log.Printf("Failed to delete subscription: %v", err)
+	for _, sub := range subscriptions {
+		wg.Add(1)
+		go func(s db.Subscription) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire semaphore
+			defer func() { <-sem }() // Release semaphore
+
+			err := h.webpush.SendNotification(s.Endpoint, s.P256dh, s.Auth, payload)
+			if err != nil {
+				log.Printf("Failed to send notification to %s: %v", s.Endpoint, err)
+
+				if strings.Contains(err.Error(), "410 Gone") {
+					log.Printf("Removing expired subscription: %s", s.Endpoint)
+					if err := h.db.DeleteSubscription(s.Endpoint); err != nil {
+						log.Printf("Failed to delete subscription: %v", err)
+					}
 				}
+
+				mu.Lock()
+				failed++
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				sent++
+				mu.Unlock()
 			}
-			failed++
-		} else {
-			sent++
-		}
+		}(sub)
 	}
+
+	wg.Wait()
 
 	log.Printf("Published to topic '%s': sent=%d, failed=%d", topic, sent, failed)
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"pushem/internal/api"
@@ -85,10 +86,28 @@ func main() {
 
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	// Configure CORS from environment variable
+	allowedOrigins := []string{"http://localhost:*", "https://localhost:*"}
+	if corsOrigins := os.Getenv("CORS_ORIGINS"); corsOrigins != "" {
+		// Parse comma-separated origins
+		origins := strings.Split(corsOrigins, ",")
+		allowedOrigins = []string{}
+		for _, origin := range origins {
+			trimmed := strings.TrimSpace(origin)
+			if trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
+		log.Printf("CORS configured for origins: %v", allowedOrigins)
+	} else {
+		log.Printf("CORS: Using default (localhost only). Set CORS_ORIGINS for production.")
+	}
+
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Pushem-Key"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: false,
 		MaxAge:           300,

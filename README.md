@@ -31,6 +31,10 @@ cd pushem
 # Create data directory for persistence
 mkdir data
 
+# Copy and configure environment variables
+cp .env.example .env
+nano .env  # Edit CORS_ORIGINS, VAPID_SUBJECT, etc.
+
 # Build and run with Docker Compose
 docker-compose up -d
 
@@ -43,12 +47,27 @@ podman run -d --name pushem -p 8080:8080 \
   -v ./data:/app/data:Z \
   -e PORT=8080 \
   -e STATIC_DIR=../web/dist \
+  -e CORS_ORIGINS=https://your-domain.com \
   pushem sh -c "cd data && ../pushem"
 ```
 
 Access the web interface at `http://localhost:8080`
 
 The database and VAPID keys will be persisted in the `./data` directory.
+
+### Important Configuration
+
+**Before deploying to production**, edit `.env` and set:
+- `CORS_ORIGINS` - Your domain(s) to restrict API access
+- `VAPID_SUBJECT` - Your email for push notification authentication
+- `MESSAGE_RETENTION_DAYS` - How long to keep message history (default: 7)
+
+Example `.env` for production:
+```bash
+CORS_ORIGINS=https://your-domain.com
+VAPID_SUBJECT=mailto:admin@your-domain.com
+MESSAGE_RETENTION_DAYS=7
+```
 
 ### Production Setup with Caddy (Automatic HTTPS)
 
@@ -66,14 +85,16 @@ For production deployments, use Caddy for automatic HTTPS with Let's Encrypt:
 3. **Run with Caddy enabled**:
 
    ```bash
-   # Docker Compose with profiles (if supported)
+   # Docker Compose (with profiles)
    docker-compose --profile caddy up -d
 
-   # Podman Compose (use standalone file)
-   podman-compose -f docker-compose.caddy.yml up -d
+   # Podman Compose (if profiles supported)
+   podman-compose --profile caddy up -d
 
-   # Docker Compose (alternative method)
-   docker-compose -f docker-compose.caddy.yml up -d
+   # Older Podman: Uncomment Caddy service in docker-compose.yml
+   # Edit docker-compose.yml and remove the "profiles:" section from caddy service
+   nano docker-compose.yml
+   podman-compose up -d
    ```
 
 4. **Access your site**:
@@ -92,39 +113,28 @@ For production deployments, use Caddy for automatic HTTPS with Let's Encrypt:
 
 **View Caddy logs:**
 ```bash
-# With Docker
-docker-compose -f docker-compose.caddy.yml logs -f caddy
-
-# With Podman
-podman-compose -f docker-compose.caddy.yml logs -f caddy
+docker-compose logs -f caddy
 ```
-
-**Configuration Files:**
-- `docker-compose.yml` - Default setup (HTTP only, direct access)
-- `docker-compose.simple.yml` - Simple Podman-compatible version
-- `docker-compose.caddy.yml` - Production setup with Caddy HTTPS
-- `Caddyfile` - Caddy reverse proxy configuration
 
 ### Container Management
 
 ```bash
-# View logs (Docker)
+# View logs
 docker-compose logs -f
+# Or for just one service:
+docker-compose logs -f pushem
+docker-compose logs -f caddy
 
-# View logs (Podman)
-podman logs -f pushem
-
-# Stop the service (Docker)
+# Stop the service
 docker-compose down
+# Or with Caddy:
+docker-compose --profile caddy down
 
-# Stop the service (Podman)
-podman stop pushem && podman rm pushem
-
-# Rebuild after code changes (Docker)
+# Rebuild after code changes
 docker-compose up -d --build
 
-# Rebuild after code changes (Podman)
-podman build -t pushem . && podman restart pushem
+# Restart a specific service
+docker-compose restart pushem
 ```
 
 ## Manual Installation (Without Docker)
@@ -279,6 +289,11 @@ Hello World!
 
 - `PORT`: Server port (default: 8080)
 - `STATIC_DIR`: Path to frontend static files (default: web/dist)
+- `CORS_ORIGINS`: Comma-separated list of allowed origins (default: localhost only)
+  - Example: `https://your-domain.com`
+  - Multiple: `https://domain1.com,https://domain2.com`
+  - Public API: `https://*,http://*` (not recommended for private deployments)
+- `VAPID_SUBJECT`: Email for VAPID authentication (default: mailto:admin@pushem.local)
 - `MESSAGE_RETENTION_DAYS`: Number of days to keep message history (default: 7)
 - `CLEANUP_INTERVAL_HOURS`: Hours between automatic cleanup runs (default: 24)
 
@@ -354,7 +369,9 @@ Pushem includes comprehensive security features:
 
 - **Rate Limiting**: Use Caddy or a reverse proxy for rate limiting in production
 
-For detailed security information, see [SECURITY.md](SECURITY.md)
+For detailed security information, see:
+- [SECURITY.md](SECURITY.md) - Security features and best practices
+- [SECURITY_AUDIT.md](SECURITY_AUDIT.md) - Complete security audit report
 
 ## Project Structure
 

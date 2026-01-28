@@ -11,9 +11,10 @@ services:
     environment:
       - PORT=8080
       - STATIC_DIR=../web/dist
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:*,https://localhost:*}  # Secure default
       - VAPID_SUBJECT=${VAPID_SUBJECT}
-      - MESSAGE_RETENTION_DAYS=7    # Keep messages for 7 days (default)
-      - CLEANUP_INTERVAL_HOURS=24   # Run cleanup every 24 hours (default)
+      - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-7}    # Keep messages for 7 days (default)
+      - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-24}   # Run cleanup every 24 hours (default)
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped
     networks:
@@ -21,11 +22,11 @@ services:
 
   # Optional Caddy reverse proxy with automatic HTTPS
   # Enable with: docker-compose --profile caddy up -d
-  # Or: podman-compose --profile caddy up -d
+  # Or for older Podman: Remove the "profiles:" section below and run: podman-compose up -d
   caddy:
     image: caddy:2-alpine
     profiles:
-      - caddy
+      - caddy  # Remove this line if your Podman doesn't support profiles
     ports:
       - "80:80"
       - "443:443"

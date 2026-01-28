@@ -36,19 +36,21 @@ push.yourdomain.com {
 
 ### 2. Start with Caddy
 
-**Option A: Using Docker Compose profiles**
+**Docker Compose (recommended)**
 ```bash
 docker-compose --profile caddy up -d
 ```
 
-**Option B: Using separate compose file**
+**Podman Compose**
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
-```
-
-**Option C: With Podman**
-```bash
+# If profiles are supported:
 podman-compose --profile caddy up -d
+
+# If profiles not supported (older versions):
+# 1. Edit docker-compose.yml
+# 2. Remove the "profiles:" section from the caddy service
+# 3. Run:
+podman-compose up -d
 ```
 
 ### 3. Verify Setup
