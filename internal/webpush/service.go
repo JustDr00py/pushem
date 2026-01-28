@@ -179,69 +179,7 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 
 // ... existing code ...
 
-type AppleTransport struct {
-	Transport   http.RoundTripper
-	PrivateKey  string
-	PublicKey   string
-	Subscriber  string
-}
 
-func (t *AppleTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Generate new VAPID token with 1h expiration
-	token, err := generateVAPIDToken(t.PrivateKey, t.Subscriber)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate apple vapid token: %w", err)
-	}
-
-	// Sign the token (we need to do this manually or use a helper)
-	// Actually, generating the full Authorization header is easier.
-	// Header format: vapid t=jwt, k=pubkey
-	
-	authHeader := fmt.Sprintf("vapid t=%s, k=%s", token, t.PublicKey)
-	req.Header.Set("Authorization", authHeader)
-	
-	// Delegate to original transport
-	transport := t.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	return transport.RoundTrip(req)
-}
-
-func generateVAPIDToken(privateKeyStr, subscriber string) (string, error) {
-	// Decode private key
-	privBytes, err := base64.RawURLEncoding.DecodeString(privateKeyStr)
-	if err != nil {
-		return "", err
-	}
-	
-	curve := elliptic.P256()
-	x, y := curve.ScalarBaseMult(privBytes)
-	privKey := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: curve,
-			X:     x,
-			Y:     y,
-		},
-		D: new(big.Int).SetBytes(privBytes),
-	}
-
-	// Create JWT
-	now := time.Now()
-	claims := jwt.MapClaims{
-		"aud": "https://web.push.apple.com", // Apple requires the generic URL or specific? 
-		// Actually "aud" should be the origin of the endpoint.
-		// But in RoundTrip we know the request URL. 
-		// Wait, "aud" must match the push service origin.
-		// For Apple it is https://web.push.apple.com
-		"exp": now.Add(time.Hour).Unix(), // 1 hour expiration
-		"sub": subscriber,
-	}
-	
-	// We need to set "aud" dynamically based on request, but here we are in a helper.
-	// Let's move this logic to RoundTrip where we have req.URL.
-	return "", nil 
-}
 
 // ... refactoring to put logic in RoundTrip ...
 
