@@ -141,8 +141,16 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 		urgency = webpush.UrgencyHigh
 	}
 
+	subscriber := os.Getenv("VAPID_SUBJECT")
+	if subscriber == "" {
+		subscriber = "mailto:admin@pushem.local"
+	}
+	if !strings.HasPrefix(subscriber, "mailto:") {
+		subscriber = "mailto:" + subscriber
+	}
+
 	resp, err := webpush.SendNotification(payloadBytes, sub, &webpush.Options{
-		Subscriber:      "mailto:admin@example.com",
+		Subscriber:      subscriber,
 		VAPIDPrivateKey: s.privateKey,
 		VAPIDPublicKey:  s.publicKey,
 		TTL:             86400,

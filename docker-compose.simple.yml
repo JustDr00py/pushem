@@ -13,5 +13,6 @@ services:
     environment:
       - PORT=8080
       - STATIC_DIR=../web/dist
+      - VAPID_SUBJECT=${VAPID_SUBJECT}
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped

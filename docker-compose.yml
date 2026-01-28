@@ -11,6 +11,7 @@ services:
     environment:
       - PORT=8080
       - STATIC_DIR=../web/dist
+      - VAPID_SUBJECT=${VAPID_SUBJECT}
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped
     networks:
@@ -26,7 +27,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"  # HTTP/3
+      - "443:443/udp" # HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
