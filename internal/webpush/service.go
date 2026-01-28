@@ -137,7 +137,6 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 		VAPIDPrivateKey: s.privateKey,
 		VAPIDPublicKey:  s.publicKey,
 		TTL:             30,
-		Urgency:         webpush.UrgencyHigh,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
