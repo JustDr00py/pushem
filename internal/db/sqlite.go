@@ -173,6 +173,21 @@ func (db *DB) ClearMessages(topic string) error {
 	return err
 }
 
+func (db *DB) DeleteOldMessages(daysOld int) (int64, error) {
+	query := `DELETE FROM messages WHERE created_at < datetime('now', ?)`
+	result, err := db.conn.Exec(query, fmt.Sprintf("-%d days", daysOld))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (db *DB) GetMessageCount() (int64, error) {
+	var count int64
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM messages").Scan(&count)
+	return count, err
+}
+
 func (db *DB) Close() error {
 	return db.conn.Close()
 }

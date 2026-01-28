@@ -278,6 +278,27 @@ Hello World!
 ### Environment Variables
 
 - `PORT`: Server port (default: 8080)
+- `STATIC_DIR`: Path to frontend static files (default: web/dist)
+- `MESSAGE_RETENTION_DAYS`: Number of days to keep message history (default: 7)
+- `CLEANUP_INTERVAL_HOURS`: Hours between automatic cleanup runs (default: 24)
+
+**Message History Cleanup:**
+
+Pushem automatically cleans up old messages to prevent database bloat. By default:
+- Messages older than 7 days are automatically deleted
+- Cleanup runs every 24 hours
+- First cleanup runs 1 minute after server start
+
+To customize:
+```bash
+# Keep messages for 30 days, cleanup every 6 hours
+docker run -e MESSAGE_RETENTION_DAYS=30 -e CLEANUP_INTERVAL_HOURS=6 ...
+```
+
+To disable automatic cleanup, set retention to a very high value:
+```bash
+docker run -e MESSAGE_RETENTION_DAYS=36500 ...  # ~100 years
+```
 
 ### Files
 

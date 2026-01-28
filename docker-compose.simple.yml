@@ -14,5 +14,7 @@ services:
       - PORT=8080
       - STATIC_DIR=../web/dist
       - VAPID_SUBJECT=${VAPID_SUBJECT}
+      - MESSAGE_RETENTION_DAYS=7
+      - CLEANUP_INTERVAL_HOURS=24
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped

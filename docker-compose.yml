@@ -12,6 +12,8 @@ services:
       - PORT=8080
       - STATIC_DIR=../web/dist
       - VAPID_SUBJECT=${VAPID_SUBJECT}
+      - MESSAGE_RETENTION_DAYS=7    # Keep messages for 7 days (default)
+      - CLEANUP_INTERVAL_HOURS=24   # Run cleanup every 24 hours (default)
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped
     networks:

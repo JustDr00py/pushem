@@ -13,6 +13,8 @@ services:
     environment:
       - PORT=8080
       - STATIC_DIR=../web/dist
+      - MESSAGE_RETENTION_DAYS=7
+      - CLEANUP_INTERVAL_HOURS=24
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped
     networks:
