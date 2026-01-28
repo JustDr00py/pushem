@@ -183,6 +183,13 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 
 // ... refactoring to put logic in RoundTrip ...
 
+type AppleTransport struct {
+	Transport   http.RoundTripper
+	PrivateKey  string
+	PublicKey   string
+	Subscriber  string
+}
+
 func (t *AppleTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Origin of the push service
 	origin := fmt.Sprintf("%s://%s", req.URL.Scheme, req.URL.Host)
@@ -250,7 +257,7 @@ func (s *Service) sendToApple(endpoint, p256dh, auth string, payload []byte) err
 		Timeout: 30 * time.Second,
 	}
 
-	resp, err := webpush.SendNotification(payloadBytes, sub, &webpush.Options{
+	resp, err := webpush.SendNotification(payload, sub, &webpush.Options{
 		// We still pass keys here so the library effectively "works", 
 		// but our Transport will OVERWRITE the Authorization header.
 		Subscriber:      subscriber,
