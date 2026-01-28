@@ -8,7 +8,8 @@ Pushem includes comprehensive security measures to protect against common vulner
 
 Pushem includes multiple layers of security protection:
 
-- **Timing Attack Protection**: Uses constant-time comparison for secret validation
+- **Hashed Secret Storage**: Topic secrets are hashed using bcrypt before storage (defense in depth)
+- **Timing Attack Protection**: bcrypt comparison provides constant-time verification
 - **DoS Prevention**: Request body size limits (10 MB max)
 - **Concurrency Control**: Limited parallel push notifications (max 10 concurrent)
 - **CORS Protection**: Configurable origins with secure defaults (localhost only)
@@ -98,7 +99,14 @@ Subscription endpoints are validated to prevent SSRF (Server-Side Request Forger
 
 ### Topic Protection
 
-Topics can be protected with secret keys:
+Topics can be protected with secret keys. Secrets are **hashed using bcrypt** before being stored in the database, providing defense in depth:
+
+- Database compromises don't reveal the actual secrets
+- Only the user knows the original secret
+- Bcrypt provides built-in protection against timing attacks
+- Industry-standard password hashing best practices applied
+
+**How it works:**
 
 ```bash
 # Protect a topic

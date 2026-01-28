@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log"
@@ -50,18 +49,6 @@ type ProtectTopicRequest struct {
 }
 
 func (h *Handler) checkAuth(w http.ResponseWriter, r *http.Request, topic string) bool {
-	secret, err := h.db.GetTopicSecret(topic)
-	if err != nil {
-		log.Printf("Failed to get topic secret: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return false
-	}
-
-	// Topic is public if no secret is set
-	if secret == "" {
-		return true
-	}
-
 	// Check header first
 	providedKey := r.Header.Get("X-Pushem-Key")
 	if providedKey == "" {
@@ -69,8 +56,15 @@ func (h *Handler) checkAuth(w http.ResponseWriter, r *http.Request, topic string
 		providedKey = r.URL.Query().Get("key")
 	}
 
-	// Use constant-time comparison to prevent timing attacks
-	if subtle.ConstantTimeCompare([]byte(providedKey), []byte(secret)) != 1 {
+	// Verify the secret using bcrypt (includes timing attack protection)
+	isValid, err := h.db.VerifyTopicSecret(topic, providedKey)
+	if err != nil {
+		log.Printf("Failed to verify topic secret: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+
+	if !isValid {
 		http.Error(w, "unauthorized: topic is protected", http.StatusUnauthorized)
 		return false
 	}

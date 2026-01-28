@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
@@ -66,13 +67,19 @@ func (db *DB) migrate() error {
 }
 
 func (db *DB) ProtectTopic(topic, secret string) error {
+	// Hash the secret using bcrypt before storing
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash secret: %w", err)
+	}
+
 	query := `
 	INSERT INTO topics (topic, secret)
 	VALUES (?, ?)
 	ON CONFLICT(topic) DO UPDATE SET
 		secret = excluded.secret
 	`
-	_, err := db.conn.Exec(query, topic, secret)
+	_, err = db.conn.Exec(query, topic, string(hashedSecret))
 	return err
 }
 
@@ -84,6 +91,32 @@ func (db *DB) GetTopicSecret(topic string) (string, error) {
 		return "", nil
 	}
 	return secret, err
+}
+
+// VerifyTopicSecret checks if the provided secret matches the stored hashed secret for a topic.
+// Returns true if the topic is public (no secret set) or if the secret matches.
+// Returns false if the secret doesn't match or if there's an error.
+func (db *DB) VerifyTopicSecret(topic, providedSecret string) (bool, error) {
+	hashedSecret, err := db.GetTopicSecret(topic)
+	if err != nil {
+		return false, fmt.Errorf("failed to get topic secret: %w", err)
+	}
+
+	// Topic is public if no secret is set
+	if hashedSecret == "" {
+		return true, nil
+	}
+
+	// Compare the provided secret with the stored hash
+	err = bcrypt.CompareHashAndPassword([]byte(hashedSecret), []byte(providedSecret))
+	if err != nil {
+		if err == bcrypt.ErrMismatchedHashAndPassword {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to verify secret: %w", err)
+	}
+
+	return true, nil
 }
 
 func (db *DB) SaveSubscription(topic, endpoint, p256dh, auth string) error {
