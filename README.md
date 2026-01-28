@@ -7,6 +7,10 @@ A self-hosted notification service designed as an alternative to ntfy.sh. Send n
 - **Simple REST API**: Send notifications with a single HTTP POST request
 - **Topic-based subscriptions**: Subscribe to specific topics to receive targeted notifications
 - **Cross-platform**: Works on Android, iOS (PWA), and Desktop browsers
+- **Admin Panel**: Web-based admin interface for managing topics and subscriptions
+- **Secure Authentication**: Bcrypt-hashed passwords and JWT token-based authentication
+- **Rate Limiting**: Built-in brute-force protection for admin login
+- **Topic Protection**: Optional bcrypt-hashed secret keys for topics
 - **Zero-config database**: Uses SQLite for easy deployment
 - **Web Push Protocol**: Standards-compliant push notifications with VAPID authentication
 - **No WebSockets required**: Uses HTTP/2 Web Push exclusively
@@ -61,12 +65,14 @@ The database and VAPID keys will be persisted in the `./data` directory.
 - `CORS_ORIGINS` - Your domain(s) to restrict API access
 - `VAPID_SUBJECT` - Your email for push notification authentication
 - `MESSAGE_RETENTION_DAYS` - How long to keep message history (default: 7)
+- `ADMIN_PASSWORD` - Strong password for admin panel access
 
 Example `.env` for production:
 ```bash
 CORS_ORIGINS=https://your-domain.com
 VAPID_SUBJECT=mailto:admin@your-domain.com
 MESSAGE_RETENTION_DAYS=7
+ADMIN_PASSWORD=your-secure-admin-password-here
 ```
 
 ### Production Setup with Caddy (Automatic HTTPS)
@@ -200,6 +206,29 @@ On iOS, Web Push requires the app to be installed as a PWA:
 4. Open Pushem from your home screen
 5. Subscribe to topics as normal
 
+### Admin Panel
+
+Access the admin panel at `http://localhost:8080/admin` to manage topics and subscriptions.
+
+**Features:**
+- View all topics with subscription and message counts
+- Delete topics (removes all subscriptions and messages)
+- Remove topic protection
+- Secure JWT token-based authentication
+- Rate limiting to prevent brute-force attacks
+
+**First-time setup:**
+1. Set `ADMIN_PASSWORD` in your `.env` file
+2. Restart Pushem
+3. Navigate to `/admin` and login with your password
+4. Your session will remain active for 60 minutes (configurable)
+
+**Security:**
+- Password is hashed with bcrypt (never stored in plain text)
+- JWT tokens expire after configurable duration (default: 60 minutes)
+- Rate limiting: 5 failed attempts per 15 minutes (configurable)
+- Password only transmitted once during login
+
 ### Publishing Notifications
 
 #### Simple text notification
@@ -283,19 +312,99 @@ Hello World!
 }
 ```
 
+#### `POST /topics/{topic}/protect`
+
+Protect a topic with a secret key. Secrets are hashed with bcrypt before storage.
+
+**Body:**
+```json
+{
+  "secret": "your-secret-key-min-8-chars"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "topic protected"
+}
+```
+
+#### Admin API Endpoints
+
+All admin endpoints require authentication with a JWT token obtained from the login endpoint.
+
+**`POST /api/admin/login`**
+
+Login to the admin panel and receive a JWT token.
+
+**Body:**
+```json
+{
+  "password": "your-admin-password"
+}
+```
+
+**Response:**
+```json
+{
+  "token": "eyJhbGc...",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}
+```
+
+**`GET /api/admin/topics`**
+
+List all topics with metadata (requires Bearer token in Authorization header).
+
+**Response:**
+```json
+[
+  {
+    "name": "my-topic",
+    "is_protected": true,
+    "subscription_count": 5,
+    "message_count": 42,
+    "created_at": "2024-01-28T12:00:00Z"
+  }
+]
+```
+
+**`DELETE /api/admin/topics/{topic}`**
+
+Delete a topic and all associated subscriptions and messages.
+
+**`DELETE /api/admin/topics/{topic}/protection`**
+
+Remove protection from a topic.
+
 ## Configuration
 
 ### Environment Variables
 
+**Server Configuration:**
 - `PORT`: Server port (default: 8080)
 - `STATIC_DIR`: Path to frontend static files (default: web/dist)
+
+**CORS & Security:**
 - `CORS_ORIGINS`: Comma-separated list of allowed origins (default: localhost only)
   - Example: `https://your-domain.com`
   - Multiple: `https://domain1.com,https://domain2.com`
   - Public API: `https://*,http://*` (not recommended for private deployments)
+
+**Web Push:**
 - `VAPID_SUBJECT`: Email for VAPID authentication (default: mailto:admin@pushem.local)
+
+**Message History:**
 - `MESSAGE_RETENTION_DAYS`: Number of days to keep message history (default: 7)
 - `CLEANUP_INTERVAL_HOURS`: Hours between automatic cleanup runs (default: 24)
+
+**Admin Panel:**
+- `ADMIN_PASSWORD`: Password for admin panel access (required, hashed with bcrypt)
+- `ADMIN_TOKEN_EXPIRY_MINUTES`: JWT token expiration in minutes (default: 60)
+- `ADMIN_MAX_LOGIN_ATTEMPTS`: Max failed login attempts before rate limiting (default: 5)
+- `ADMIN_LOGIN_RATE_LIMIT_MINUTES`: Rate limit time window in minutes (default: 15)
 
 **Message History Cleanup:**
 
@@ -348,9 +457,12 @@ Pushem includes comprehensive security features:
   - Secret key strength validation
 
 - **Topic Protection**: Optional secret keys to protect topics from unauthorized access
+  - Secrets are hashed with bcrypt before storage (never stored in plain text)
+  - Provides defense in depth if database is compromised
   ```bash
-  # Protect a topic
-  curl -X POST http://localhost:8080/protect/my-topic \
+  # Protect a topic (minimum 8 characters)
+  curl -X POST http://localhost:8080/topics/my-topic/protect \
+    -H "Content-Type: application/json" \
     -d '{"secret": "your-secret-key"}'
 
   # Publish with authentication
@@ -367,7 +479,14 @@ Pushem includes comprehensive security features:
   chmod 600 data/vapid_keys.json
   ```
 
-- **Rate Limiting**: Use Caddy or a reverse proxy for rate limiting in production
+- **Admin Panel Security**:
+  - Bcrypt-hashed admin password (never stored in plain text)
+  - JWT token-based authentication with configurable expiration
+  - Built-in rate limiting (5 attempts per 15 minutes by default)
+  - Session tokens stored in browser sessionStorage
+  - Automatic logout on token expiration
+
+- **Rate Limiting**: Built-in rate limiting for admin login; use Caddy or a reverse proxy for additional API rate limiting
 
 For detailed security information, see:
 - [SECURITY.md](SECURITY.md) - Security features and best practices
@@ -438,6 +557,24 @@ def send_notification(topic, title, message, click_url=None):
 
 # Usage
 send_notification("alerts", "Test", "Hello from Python!")
+```
+
+### Admin API usage
+
+```bash
+# Login and get token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{"password":"your-admin-password"}' | jq -r '.token')
+
+# List all topics
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/admin/topics
+
+# Delete a topic
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/admin/topics/my-topic
 ```
 
 ## Troubleshooting
