@@ -241,5 +241,6 @@ if err != nil {
 ## Related Documentation
 
 - [README.md](README.md) - Main documentation
+- [SECURITY.md](SECURITY.md) - Security features and best practices
 - [Docker Compose Configuration](docker-compose.yml)
 - [API Documentation](README.md#api-endpoints)

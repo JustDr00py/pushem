@@ -324,10 +324,37 @@ go run cmd/server/main.go
 
 ## Security Considerations
 
+Pushem includes comprehensive security features:
+
+- **Input Validation**: All API endpoints validate and sanitize user input
+  - Topic name validation (alphanumeric, length limits, reserved names)
+  - Message content validation (UTF-8, length limits, null byte detection)
+  - SSRF protection for subscription endpoints (blocks private IPs)
+  - Secret key strength validation
+
+- **Topic Protection**: Optional secret keys to protect topics from unauthorized access
+  ```bash
+  # Protect a topic
+  curl -X POST http://localhost:8080/protect/my-topic \
+    -d '{"secret": "your-secret-key"}'
+
+  # Publish with authentication
+  curl -X POST http://localhost:8080/publish/my-topic \
+    -H "X-Pushem-Key: your-secret-key" \
+    -d "Protected message"
+  ```
+
 - **HTTPS Required**: For production deployments, HTTPS is mandatory for Service Workers
+  - Use Caddy for automatic Let's Encrypt certificates (see CADDY_SETUP.md)
+
 - **VAPID Keys**: Keep `vapid_keys.json` secure. Losing these keys will invalidate all subscriptions
-- **No Authentication**: By default, anyone can subscribe or publish. Consider adding authentication for production use
-- **Rate Limiting**: Consider implementing rate limiting for the publish endpoint
+  ```bash
+  chmod 600 data/vapid_keys.json
+  ```
+
+- **Rate Limiting**: Use Caddy or a reverse proxy for rate limiting in production
+
+For detailed security information, see [SECURITY.md](SECURITY.md)
 
 ## Project Structure
 

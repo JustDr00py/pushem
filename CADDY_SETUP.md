@@ -226,3 +226,9 @@ docker run --rm \
 - [Caddy Documentation](https://caddyserver.com/docs/)
 - [Caddyfile Syntax](https://caddyserver.com/docs/caddyfile)
 - [Let's Encrypt Rate Limits](https://letsencrypt.org/docs/rate-limits/)
+
+## Related Documentation
+
+- [README.md](README.md) - Main documentation
+- [SECURITY.md](SECURITY.md) - Security features and best practices
+- [GARBAGE_COLLECTION.md](GARBAGE_COLLECTION.md) - Message cleanup configuration

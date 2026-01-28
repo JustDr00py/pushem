@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"pushem/internal/db"
+	"pushem/internal/validation"
 	"pushem/internal/webpush"
 
 	"github.com/go-chi/chi/v5"
@@ -81,14 +82,22 @@ func (h *Handler) ProtectTopic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate topic name
+	if err := validation.ValidateTopic(topic); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	var req ProtectTopicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if req.Secret == "" {
-		http.Error(w, "secret is required", http.StatusBadRequest)
+	// Sanitize and validate secret
+	req.Secret = validation.SanitizeString(req.Secret)
+	if err := validation.ValidateSecret(req.Secret); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -114,6 +123,12 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate topic name
+	if err := validation.ValidateTopic(topic); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Authorization check
 	if !h.checkAuth(w, r, topic) {
 		return
@@ -127,6 +142,12 @@ func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	if req.Endpoint == "" || req.Keys.P256dh == "" || req.Keys.Auth == "" {
 		http.Error(w, "endpoint, p256dh, and auth are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate endpoint URL (SSRF protection)
+	if err := validation.ValidateURL(req.Endpoint); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -147,6 +168,12 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	topic := chi.URLParam(r, "topic")
 	if topic == "" {
 		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate topic name
+	if err := validation.ValidateTopic(topic); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -178,6 +205,14 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 
 	if payload.Title == "" && payload.Message != "" {
 		payload.Title = "Notification"
+	}
+
+	// Sanitize and validate message content
+	payload.Title = validation.SanitizeString(payload.Title)
+	payload.Message = validation.SanitizeString(payload.Message)
+	if err := validation.ValidateMessage(payload.Title, payload.Message); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// Save message to history
@@ -240,6 +275,12 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate topic name
+	if err := validation.ValidateTopic(topic); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Authorization check
 	if !h.checkAuth(w, r, topic) {
 		return
@@ -260,6 +301,12 @@ func (h *Handler) ClearHistory(w http.ResponseWriter, r *http.Request) {
 	topic := chi.URLParam(r, "topic")
 	if topic == "" {
 		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate topic name
+	if err := validation.ValidateTopic(topic); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
