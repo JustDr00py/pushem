@@ -177,24 +177,6 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 }
 
 
-import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
-
-	webpush "github.com/SherClockHolmes/webpush-go"
-	"github.com/golang-jwt/jwt/v5"
-)
-
 // ... existing code ...
 
 type AppleTransport struct {
