@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
@@ -132,11 +133,20 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
+	// Check if endpoint is APNs (Apple Push Notification service)
+	// Apple requires the Urgency header to be set (typically to High for immediate delivery)
+	// while some desktop browsers might fail with it.
+	var urgency webpush.Urgency
+	if strings.Contains(endpoint, "push.apple.com") {
+		urgency = webpush.UrgencyHigh
+	}
+
 	resp, err := webpush.SendNotification(payloadBytes, sub, &webpush.Options{
 		Subscriber:      "mailto:admin@example.com",
 		VAPIDPrivateKey: s.privateKey,
 		VAPIDPublicKey:  s.publicKey,
 		TTL:             86400,
+		Urgency:         urgency,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
