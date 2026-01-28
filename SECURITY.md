@@ -145,6 +145,18 @@ The admin panel at `/admin` uses modern, secure authentication:
 - **Token Expiration**: Tokens expire after configurable duration (default: 60 minutes)
 - **Secure Headers**: Tokens sent in standard `Authorization: Bearer` header
 
+### Rate Limiting (Brute-Force Protection)
+
+The admin login endpoint is protected by rate limiting:
+
+- **IP-Based Tracking**: Failed login attempts tracked per IP address
+- **Configurable Limits**: Default 5 attempts per 15 minutes
+- **Automatic Cleanup**: Old attempts automatically removed from memory
+- **429 Status Code**: Returns "Too Many Requests" when limit exceeded
+- **Reset on Success**: Successful login clears failed attempts for that IP
+
+This prevents attackers from trying thousands of password combinations.
+
 ### Configuration
 
 Set in your `.env` file:
@@ -155,6 +167,10 @@ ADMIN_PASSWORD=your-secure-admin-password-here
 
 # Token expiry in minutes (default: 60)
 ADMIN_TOKEN_EXPIRY_MINUTES=60
+
+# Rate limiting (brute-force protection)
+ADMIN_MAX_LOGIN_ATTEMPTS=5        # Max attempts before blocking
+ADMIN_LOGIN_RATE_LIMIT_MINUTES=15  # Time window for rate limiting
 ```
 
 ### Security Benefits

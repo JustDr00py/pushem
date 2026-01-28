@@ -25,9 +25,101 @@ type Handler struct {
 	adminPasswordHash  []byte
 	jwtSecret          []byte
 	tokenExpiryMinutes int
+	loginRateLimiter   *LoginRateLimiter
 }
 
-func NewHandler(database *db.DB, webpushService *webpush.Service, adminPassword string, tokenExpiryMinutes int) *Handler {
+// LoginAttempt tracks a single login attempt
+type LoginAttempt struct {
+	Timestamp time.Time
+}
+
+// LoginRateLimiter tracks failed login attempts by IP address
+type LoginRateLimiter struct {
+	attempts       map[string][]LoginAttempt
+	mu             sync.Mutex
+	maxAttempts    int
+	windowDuration time.Duration
+}
+
+// NewLoginRateLimiter creates a new rate limiter for login attempts
+func NewLoginRateLimiter(maxAttempts int, windowMinutes int) *LoginRateLimiter {
+	limiter := &LoginRateLimiter{
+		attempts:       make(map[string][]LoginAttempt),
+		maxAttempts:    maxAttempts,
+		windowDuration: time.Duration(windowMinutes) * time.Minute,
+	}
+
+	// Start cleanup goroutine to remove old entries
+	go limiter.cleanup()
+
+	return limiter
+}
+
+// cleanup periodically removes expired entries from the rate limiter
+func (l *LoginRateLimiter) cleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		l.mu.Lock()
+		now := time.Now()
+		for ip, attempts := range l.attempts {
+			// Filter out old attempts
+			var validAttempts []LoginAttempt
+			for _, attempt := range attempts {
+				if now.Sub(attempt.Timestamp) < l.windowDuration {
+					validAttempts = append(validAttempts, attempt)
+				}
+			}
+
+			if len(validAttempts) == 0 {
+				delete(l.attempts, ip)
+			} else {
+				l.attempts[ip] = validAttempts
+			}
+		}
+		l.mu.Unlock()
+	}
+}
+
+// IsAllowed checks if an IP address is allowed to attempt login
+func (l *LoginRateLimiter) IsAllowed(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	attempts := l.attempts[ip]
+
+	// Count valid attempts within the time window
+	validAttempts := 0
+	for _, attempt := range attempts {
+		if now.Sub(attempt.Timestamp) < l.windowDuration {
+			validAttempts++
+		}
+	}
+
+	return validAttempts < l.maxAttempts
+}
+
+// RecordFailedAttempt records a failed login attempt for an IP address
+func (l *LoginRateLimiter) RecordFailedAttempt(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.attempts[ip] = append(l.attempts[ip], LoginAttempt{
+		Timestamp: time.Now(),
+	})
+}
+
+// ResetAttempts clears all failed attempts for an IP address (called on successful login)
+func (l *LoginRateLimiter) ResetAttempts(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	delete(l.attempts, ip)
+}
+
+func NewHandler(database *db.DB, webpushService *webpush.Service, adminPassword string, tokenExpiryMinutes int, maxLoginAttempts int, loginRateLimitWindow int) *Handler {
 	var adminPasswordHash []byte
 
 	// Hash the admin password if provided
@@ -50,12 +142,24 @@ func NewHandler(database *db.DB, webpushService *webpush.Service, adminPassword 
 		tokenExpiryMinutes = 60 // Default to 1 hour
 	}
 
+	if maxLoginAttempts <= 0 {
+		maxLoginAttempts = 5 // Default to 5 attempts
+	}
+
+	if loginRateLimitWindow <= 0 {
+		loginRateLimitWindow = 15 // Default to 15 minutes
+	}
+
+	// Create rate limiter for login attempts
+	rateLimiter := NewLoginRateLimiter(maxLoginAttempts, loginRateLimitWindow)
+
 	return &Handler{
 		db:                 database,
 		webpush:            webpushService,
 		adminPasswordHash:  adminPasswordHash,
 		jwtSecret:          jwtSecret,
 		tokenExpiryMinutes: tokenExpiryMinutes,
+		loginRateLimiter:   rateLimiter,
 	}
 }
 
@@ -530,6 +634,16 @@ func (h *Handler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get client IP address for rate limiting
+	clientIP := getClientIP(r)
+
+	// Check rate limiting
+	if !h.loginRateLimiter.IsAllowed(clientIP) {
+		log.Printf("Admin login rate limit exceeded for IP: %s", clientIP)
+		http.Error(w, "too many failed login attempts, please try again later", http.StatusTooManyRequests)
+		return
+	}
+
 	// Parse request body
 	var req struct {
 		Password string `json:"password"`
@@ -543,8 +657,9 @@ func (h *Handler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 	// Verify password using bcrypt
 	err := bcrypt.CompareHashAndPassword(h.adminPasswordHash, []byte(req.Password))
 	if err != nil {
-		// Password doesn't match
-		log.Printf("Admin login attempt with incorrect password")
+		// Password doesn't match - record failed attempt
+		h.loginRateLimiter.RecordFailedAttempt(clientIP)
+		log.Printf("Admin login attempt with incorrect password from IP: %s", clientIP)
 		http.Error(w, "invalid password", http.StatusUnauthorized)
 		return
 	}
@@ -557,13 +672,40 @@ func (h *Handler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Admin login successful")
+	// Successful login - reset rate limit for this IP
+	h.loginRateLimiter.ResetAttempts(clientIP)
+	log.Printf("Admin login successful from IP: %s", clientIP)
 
 	// Return token and expiry info
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"token":          token,
-		"expires_in":     h.tokenExpiryMinutes * 60, // Return seconds
-		"token_type":     "Bearer",
+		"token":       token,
+		"expires_in":  h.tokenExpiryMinutes * 60, // Return seconds
+		"token_type":  "Bearer",
 	})
+}
+
+// getClientIP extracts the client IP address from the request
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first (for reverse proxies)
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		// Take the first IP if multiple are present
+		ips := strings.Split(forwarded, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	// Check X-Real-IP header
+	realIP := r.Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
+	// Fall back to RemoteAddr
+	ip := r.RemoteAddr
+	// Remove port if present
+	if idx := strings.LastIndex(ip, ":"); idx != -1 {
+		ip = ip[:idx]
+	}
+	return ip
 }

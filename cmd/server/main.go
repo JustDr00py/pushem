@@ -96,7 +96,26 @@ func main() {
 		}
 	}
 
-	handler := api.NewHandler(database, webpushService, adminPassword, tokenExpiryMinutes)
+	// Get rate limiting configuration
+	maxLoginAttempts := 5 // Default: 5 attempts
+	if attempts := os.Getenv("ADMIN_MAX_LOGIN_ATTEMPTS"); attempts != "" {
+		if parsed, err := strconv.Atoi(attempts); err == nil && parsed > 0 {
+			maxLoginAttempts = parsed
+		}
+	}
+
+	loginRateLimitWindow := 15 // Default: 15 minutes
+	if window := os.Getenv("ADMIN_LOGIN_RATE_LIMIT_MINUTES"); window != "" {
+		if parsed, err := strconv.Atoi(window); err == nil && parsed > 0 {
+			loginRateLimitWindow = parsed
+		}
+	}
+
+	if adminPassword != "" {
+		log.Printf("Admin login rate limiting: %d attempts per %d minutes", maxLoginAttempts, loginRateLimitWindow)
+	}
+
+	handler := api.NewHandler(database, webpushService, adminPassword, tokenExpiryMinutes, maxLoginAttempts, loginRateLimitWindow)
 
 	r := chi.NewRouter()
 
