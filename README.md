@@ -66,11 +66,14 @@ For production deployments, use Caddy for automatic HTTPS with Let's Encrypt:
 3. **Run with Caddy enabled**:
 
    ```bash
-   # Method 1: Using profiles (recommended)
+   # Docker Compose with profiles (if supported)
    docker-compose --profile caddy up -d
 
-   # Method 2: Using separate compose file
-   docker-compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+   # Podman Compose (use standalone file)
+   podman-compose -f docker-compose.caddy.yml up -d
+
+   # Docker Compose (alternative method)
+   docker-compose -f docker-compose.caddy.yml up -d
    ```
 
 4. **Access your site**:
@@ -89,8 +92,18 @@ For production deployments, use Caddy for automatic HTTPS with Let's Encrypt:
 
 **View Caddy logs:**
 ```bash
-docker-compose logs -f caddy
+# With Docker
+docker-compose -f docker-compose.caddy.yml logs -f caddy
+
+# With Podman
+podman-compose -f docker-compose.caddy.yml logs -f caddy
 ```
+
+**Configuration Files:**
+- `docker-compose.yml` - Default setup (HTTP only, direct access)
+- `docker-compose.simple.yml` - Simple Podman-compatible version
+- `docker-compose.caddy.yml` - Production setup with Caddy HTTPS
+- `Caddyfile` - Caddy reverse proxy configuration
 
 ### Container Management
 

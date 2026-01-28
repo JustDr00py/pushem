@@ -1,15 +1,22 @@
-# Alternative Caddy configuration
-# Use with: docker-compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+# Complete docker-compose with Caddy for production
+# Use with: podman-compose -f docker-compose.caddy.yml up -d
 
 version: '3.8'
 
 services:
   pushem:
-    ports:
-      # Disable direct port mapping when using Caddy
-      - "8080"  # Only expose internally
+    build: .
     expose:
       - "8080"
+    volumes:
+      - ./data:/app/data:Z
+    environment:
+      - PORT=8080
+      - STATIC_DIR=../web/dist
+    command: sh -c "cd data && ../pushem"
+    restart: unless-stopped
+    networks:
+      - pushem-network
 
   caddy:
     image: caddy:2-alpine
@@ -26,6 +33,10 @@ services:
       - pushem-network
     depends_on:
       - pushem
+
+networks:
+  pushem-network:
+    driver: bridge
 
 volumes:
   caddy-data:

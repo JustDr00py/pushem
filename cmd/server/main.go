@@ -48,6 +48,8 @@ func main() {
 	r.Get("/vapid-public-key", handler.GetVAPIDPublicKey)
 	r.Post("/subscribe/{topic}", handler.Subscribe)
 	r.Post("/publish/{topic}", handler.Publish)
+	r.Get("/history/{topic}", handler.GetHistory)
+	r.Delete("/history/{topic}", handler.ClearHistory)
 
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {

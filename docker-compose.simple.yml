@@ -1,0 +1,17 @@
+# Simple docker-compose without Caddy
+# Use with: podman-compose -f docker-compose.simple.yml up -d
+
+version: '3.8'
+
+services:
+  pushem:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data:Z
+    environment:
+      - PORT=8080
+      - STATIC_DIR=../web/dist
+    command: sh -c "cd data && ../pushem"
+    restart: unless-stopped

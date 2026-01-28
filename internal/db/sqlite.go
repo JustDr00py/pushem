@@ -48,6 +48,13 @@ func (db *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(topic, endpoint)
 	);
+	CREATE TABLE IF NOT EXISTS messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		topic TEXT NOT NULL,
+		title TEXT NOT NULL,
+		message TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := db.conn.Exec(query)
 	return err
@@ -88,6 +95,55 @@ func (db *DB) GetSubscriptionsByTopic(topic string) ([]Subscription, error) {
 func (db *DB) DeleteSubscription(endpoint string) error {
 	query := `DELETE FROM subscriptions WHERE endpoint = ?`
 	_, err := db.conn.Exec(query, endpoint)
+	return err
+}
+
+type Message struct {
+	ID        int
+	Topic     string
+	Title     string
+	Message   string
+	CreatedAt string
+}
+
+func (db *DB) SaveMessage(topic, title, message string) error {
+	query := `
+	INSERT INTO messages (topic, title, message)
+	VALUES (?, ?, ?)
+	`
+	_, err := db.conn.Exec(query, topic, title, message)
+	return err
+}
+
+func (db *DB) GetMessagesByTopic(topic string) ([]Message, error) {
+	query := `
+	SELECT id, topic, title, message, created_at 
+	FROM messages 
+	WHERE topic = ? 
+	ORDER BY created_at DESC 
+	LIMIT 50`
+	
+	rows, err := db.conn.Query(query, topic)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		if err := rows.Scan(&msg.ID, &msg.Topic, &msg.Title, &msg.Message, &msg.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, rows.Err()
+}
+
+func (db *DB) ClearMessages(topic string) error {
+	query := `DELETE FROM messages WHERE topic = ?`
+	_, err := db.conn.Exec(query, topic)
 	return err
 }
 

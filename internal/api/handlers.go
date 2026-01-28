@@ -105,6 +105,12 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 		payload.Title = "Notification"
 	}
 
+	// Save message to history
+	if err := h.db.SaveMessage(topic, payload.Title, payload.Message); err != nil {
+		log.Printf("Failed to save message to history: %v", err)
+		// We initiate the publish anyway, even if saving history fails
+	}
+
 	subscriptions, err := h.db.GetSubscriptionsByTopic(topic)
 	if err != nil {
 		log.Printf("Failed to get subscriptions: %v", err)
@@ -150,4 +156,39 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 		"sent":   sent,
 		"failed": failed,
 	})
+}
+
+func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
+	topic := chi.URLParam(r, "topic")
+	if topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	messages, err := h.db.GetMessagesByTopic(topic)
+	if err != nil {
+		log.Printf("Failed to get messages: %v", err)
+		http.Error(w, "failed to get messages", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(messages)
+}
+
+func (h *Handler) ClearHistory(w http.ResponseWriter, r *http.Request) {
+	topic := chi.URLParam(r, "topic")
+	if topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.ClearMessages(topic); err != nil {
+		log.Printf("Failed to clear messages: %v", err)
+		http.Error(w, "failed to clear messages", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "history cleared"})
 }

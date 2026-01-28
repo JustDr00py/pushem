@@ -34,11 +34,123 @@ function IOSModal({ isOpen, onClose }: IOSModalProps) {
   );
 }
 
+interface Message {
+  ID: number;
+  Topic: string;
+  Title: string;
+  Message: string;
+  CreatedAt: string;
+}
+
+interface HistoryModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  topic: string;
+}
+
+function HistoryModal({ isOpen, onClose, topic }: HistoryModalProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && topic) {
+      fetchHistory();
+    }
+  }, [isOpen, topic]);
+
+  const fetchHistory = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/history/${encodeURIComponent(topic)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch history:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (!confirm('Are you sure you want to clear all history for this topic?')) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/history/${encodeURIComponent(topic)}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Failed to clear history:', error);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[80vh] flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-gray-900">History: {topic}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto mb-4 space-y-3">
+          {loading ? (
+            <div className="text-center py-4 text-gray-500">Loading...</div>
+          ) : messages.length === 0 ? (
+            <div className="text-center py-4 text-gray-500">No messages found</div>
+          ) : (
+            messages.map((msg) => (
+              <div key={msg.ID} className="bg-gray-50 p-3 rounded border border-gray-200">
+                <div className="flex justify-between items-start mb-1">
+                  <h3 className="font-medium text-gray-900">{msg.Title || 'Notification'}</h3>
+                  <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
+                    {new Date(msg.CreatedAt).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 break-words">{msg.Message}</p>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="flex gap-3 mt-auto pt-4 border-t border-gray-200">
+          <button
+            onClick={fetchHistory}
+            className="flex-1 py-2 px-4 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 font-medium"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={clearHistory}
+            disabled={messages.length === 0}
+            className={`flex-1 py-2 px-4 text-white rounded font-medium ${messages.length === 0
+              ? 'bg-red-300 cursor-not-allowed'
+              : 'bg-red-600 hover:bg-red-700'
+              }`}
+          >
+            Clear History
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [topic, setTopic] = useState('');
   const [status, setStatus] = useState('');
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
+  const [activeHistoryTopic, setActiveHistoryTopic] = useState<string | null>(null);
   const [subscribedTopics, setSubscribedTopics] = useState<string[]>([]);
 
   useEffect(() => {
@@ -264,24 +376,22 @@ function App() {
           <button
             onClick={handleSubscribe}
             disabled={isSubscribed || !topic.trim()}
-            className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-              isSubscribed || !topic.trim()
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-black text-white hover:bg-gray-800'
-            }`}
+            className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${isSubscribed || !topic.trim()
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-black text-white hover:bg-gray-800'
+              }`}
           >
             {isSubscribed ? 'Subscribed' : 'Subscribe'}
           </button>
 
           {status && (
             <div
-              className={`p-3 rounded-lg text-sm ${
-                status.includes('Error') || status.includes('denied') || status.includes('failed')
-                  ? 'bg-red-100 text-red-700'
-                  : status.includes('Success')
+              className={`p-3 rounded-lg text-sm ${status.includes('Error') || status.includes('denied') || status.includes('failed')
+                ? 'bg-red-100 text-red-700'
+                : status.includes('Success')
                   ? 'bg-green-100 text-green-700'
                   : 'bg-blue-100 text-blue-700'
-              }`}
+                }`}
             >
               {status}
             </div>
@@ -319,6 +429,12 @@ function App() {
                       className="flex-1 py-1.5 px-3 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                     >
                       Send Test
+                    </button>
+                    <button
+                      onClick={() => setActiveHistoryTopic(t)}
+                      className="flex-1 py-1.5 px-3 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+                    >
+                      History
                     </button>
                     <button
                       onClick={() => {
@@ -383,6 +499,14 @@ function App() {
       </div>
 
       <IOSModal isOpen={showIOSModal} onClose={() => setShowIOSModal(false)} />
+
+      {activeHistoryTopic && (
+        <HistoryModal
+          isOpen={true}
+          onClose={() => setActiveHistoryTopic(null)}
+          topic={activeHistoryTopic}
+        />
+      )}
     </div>
   );
 }
