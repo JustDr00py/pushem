@@ -1,0 +1,37 @@
+# Binaries
+pushem
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database
+pushem.db
+pushem.db-journal
+
+# VAPID keys
+vapid_keys.json
+
+# Go
+*.test
+*.out
+vendor/
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  pushem:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persist database and VAPID keys to host data directory
+      - ./data:/app/data:Z
+    environment:
+      - PORT=8080
+      - STATIC_DIR=../web/dist
+    command: sh -c "cd data && ../pushem"
+    restart: unless-stopped

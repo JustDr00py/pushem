@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+Plan/
+
+# Build artifacts
+pushem
+*.exe
+
+# Database and keys (will be in volumes)
+pushem.db
+pushem.db-journal
+vapid_keys.json
+
+# Frontend
+web/node_modules
+web/dist
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
