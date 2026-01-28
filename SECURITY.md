@@ -9,6 +9,8 @@ Pushem includes comprehensive security measures to protect against common vulner
 Pushem includes multiple layers of security protection:
 
 - **Hashed Secret Storage**: Topic secrets are hashed using bcrypt before storage (defense in depth)
+- **Admin Password Hashing**: Admin password hashed with bcrypt, never stored or transmitted in plain text
+- **Token-Based Authentication**: JWT tokens for admin panel with configurable expiration
 - **Timing Attack Protection**: bcrypt comparison provides constant-time verification
 - **DoS Prevention**: Request body size limits (10 MB max)
 - **Concurrency Control**: Limited parallel push notifications (max 10 concurrent)
@@ -130,6 +132,46 @@ For production deployments, HTTPS is **required**:
 - Service Workers only work on HTTPS (except localhost)
 - Web Push requires secure contexts
 - Use Caddy for automatic Let's Encrypt certificates (see CADDY_SETUP.md)
+
+## Admin Panel Security
+
+The admin panel at `/admin` uses modern, secure authentication:
+
+### Token-Based Authentication
+
+- **Password Hashing**: Admin password is hashed with bcrypt (never stored in plain text)
+- **JWT Tokens**: After successful login, server issues a JWT token
+- **One-Time Password**: Password only transmitted once during login (not with every request)
+- **Token Expiration**: Tokens expire after configurable duration (default: 60 minutes)
+- **Secure Headers**: Tokens sent in standard `Authorization: Bearer` header
+
+### Configuration
+
+Set in your `.env` file:
+
+```bash
+# Admin password (hashed automatically on startup)
+ADMIN_PASSWORD=your-secure-admin-password-here
+
+# Token expiry in minutes (default: 60)
+ADMIN_TOKEN_EXPIRY_MINUTES=60
+```
+
+### Security Benefits
+
+1. **Password only sent once** - Reduces exposure window compared to per-request authentication
+2. **Bcrypt hashing** - Password hash stored in memory only, never in database or logs
+3. **Token expiration** - Limits damage from token theft
+4. **Standard JWT** - Industry-standard, well-tested authentication mechanism
+5. **HTTPS required** - Production deployments must use HTTPS to protect tokens in transit
+
+### Best Practices
+
+- Set a strong admin password (16+ characters, mixed case, numbers, symbols)
+- Use HTTPS in production (tokens transmitted over secure connection)
+- Keep `ADMIN_TOKEN_EXPIRY_MINUTES` reasonable (60-120 minutes)
+- Logout when finished to clear session token
+- Never share your `.env` file
 
 ## VAPID Keys Security
 

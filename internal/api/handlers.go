@@ -1,32 +1,105 @@
 package api
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"pushem/internal/db"
 	"pushem/internal/validation"
 	"pushem/internal/webpush"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Handler struct {
-	db            *db.DB
-	webpush       *webpush.Service
-	adminPassword string
+	db                 *db.DB
+	webpush            *webpush.Service
+	adminPasswordHash  []byte
+	jwtSecret          []byte
+	tokenExpiryMinutes int
 }
 
-func NewHandler(database *db.DB, webpushService *webpush.Service, adminPassword string) *Handler {
-	return &Handler{
-		db:            database,
-		webpush:       webpushService,
-		adminPassword: adminPassword,
+func NewHandler(database *db.DB, webpushService *webpush.Service, adminPassword string, tokenExpiryMinutes int) *Handler {
+	var adminPasswordHash []byte
+
+	// Hash the admin password if provided
+	if adminPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+		if err != nil {
+			log.Printf("Warning: Failed to hash admin password: %v", err)
+		} else {
+			adminPasswordHash = hash
+		}
 	}
+
+	// Generate a random JWT secret key
+	jwtSecret := make([]byte, 32)
+	if _, err := rand.Read(jwtSecret); err != nil {
+		log.Printf("Warning: Failed to generate JWT secret: %v", err)
+	}
+
+	if tokenExpiryMinutes <= 0 {
+		tokenExpiryMinutes = 60 // Default to 1 hour
+	}
+
+	return &Handler{
+		db:                 database,
+		webpush:            webpushService,
+		adminPasswordHash:  adminPasswordHash,
+		jwtSecret:          jwtSecret,
+		tokenExpiryMinutes: tokenExpiryMinutes,
+	}
+}
+
+// AdminClaims represents the JWT claims for admin authentication
+type AdminClaims struct {
+	Admin bool `json:"admin"`
+	jwt.RegisteredClaims
+}
+
+// generateAdminToken creates a new JWT token for admin access
+func (h *Handler) generateAdminToken() (string, error) {
+	expirationTime := time.Now().Add(time.Duration(h.tokenExpiryMinutes) * time.Minute)
+
+	claims := &AdminClaims{
+		Admin: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "pushem",
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(h.jwtSecret)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
+}
+
+// validateAdminToken validates a JWT token and returns whether it's valid
+func (h *Handler) validateAdminToken(tokenString string) bool {
+	claims := &AdminClaims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return h.jwtSecret, nil
+	})
+
+	if err != nil || !token.Valid || !claims.Admin {
+		return false
+	}
+
+	return true
 }
 
 func (h *Handler) GetVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
@@ -363,22 +436,34 @@ func (h *Handler) ClearHistory(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "history cleared"})
 }
 
-// Admin authentication middleware
+// Admin authentication middleware - validates JWT tokens
 func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// If no admin password is set, admin panel is disabled
-		if h.adminPassword == "" {
+		// If no admin password hash is set, admin panel is disabled
+		if len(h.adminPasswordHash) == 0 {
 			http.Error(w, "admin panel is disabled", http.StatusForbidden)
 			return
 		}
 
-		// Check for admin password in X-Admin-Password header
-		providedPassword := r.Header.Get("X-Admin-Password")
+		// Get token from Authorization header (Bearer token)
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "unauthorized: missing token", http.StatusUnauthorized)
+			return
+		}
 
-		// Compare using bcrypt-style comparison for consistency
-		// (though admin password is plain text in .env)
-		if providedPassword != h.adminPassword {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		// Extract token from "Bearer <token>"
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "unauthorized: invalid authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		token := parts[1]
+
+		// Validate the token
+		if !h.validateAdminToken(token) {
+			http.Error(w, "unauthorized: invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
@@ -437,9 +522,48 @@ func (h *Handler) AdminUnprotectTopic(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "topic unprotected"})
 }
 
-// Admin: Verify password
-func (h *Handler) AdminVerifyPassword(w http.ResponseWriter, r *http.Request) {
-	// If this endpoint is reached, middleware already verified the password
+// AdminLogin handles admin authentication and issues JWT tokens
+func (h *Handler) AdminLogin(w http.ResponseWriter, r *http.Request) {
+	// If no admin password hash is set, admin panel is disabled
+	if len(h.adminPasswordHash) == 0 {
+		http.Error(w, "admin panel is disabled", http.StatusForbidden)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify password using bcrypt
+	err := bcrypt.CompareHashAndPassword(h.adminPasswordHash, []byte(req.Password))
+	if err != nil {
+		// Password doesn't match
+		log.Printf("Admin login attempt with incorrect password")
+		http.Error(w, "invalid password", http.StatusUnauthorized)
+		return
+	}
+
+	// Generate JWT token
+	token, err := h.generateAdminToken()
+	if err != nil {
+		log.Printf("Failed to generate admin token: %v", err)
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Admin login successful")
+
+	// Return token and expiry info
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"valid": true})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":          token,
+		"expires_in":     h.tokenExpiryMinutes * 60, // Return seconds
+		"token_type":     "Bearer",
+	})
 }

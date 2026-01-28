@@ -85,10 +85,18 @@ func main() {
 	if adminPassword == "" {
 		log.Println("Warning: ADMIN_PASSWORD not set. Admin panel will be disabled.")
 	} else {
-		log.Println("Admin panel enabled")
+		log.Println("Admin panel enabled with token-based authentication")
 	}
 
-	handler := api.NewHandler(database, webpushService, adminPassword)
+	// Get token expiry configuration (in minutes)
+	tokenExpiryMinutes := 60 // Default: 1 hour
+	if expiry := os.Getenv("ADMIN_TOKEN_EXPIRY_MINUTES"); expiry != "" {
+		if parsed, err := strconv.Atoi(expiry); err == nil && parsed > 0 {
+			tokenExpiryMinutes = parsed
+		}
+	}
+
+	handler := api.NewHandler(database, webpushService, adminPassword, tokenExpiryMinutes)
 
 	r := chi.NewRouter()
 
@@ -128,13 +136,18 @@ func main() {
 	r.Delete("/history/{topic}", handler.ClearHistory)
 	r.Post("/topics/{topic}/protect", handler.ProtectTopic)
 
-	// Admin routes (protected by admin password)
+	// Admin routes
 	r.Route("/api/admin", func(r chi.Router) {
-		r.Use(handler.RequireAdmin)
-		r.Post("/verify", handler.AdminVerifyPassword)
-		r.Get("/topics", handler.AdminListTopics)
-		r.Delete("/topics/{topic}", handler.AdminDeleteTopic)
-		r.Delete("/topics/{topic}/protection", handler.AdminUnprotectTopic)
+		// Login endpoint (not protected, issues tokens)
+		r.Post("/login", handler.AdminLogin)
+
+		// Protected routes (require valid JWT token)
+		r.Group(func(r chi.Router) {
+			r.Use(handler.RequireAdmin)
+			r.Get("/topics", handler.AdminListTopics)
+			r.Delete("/topics/{topic}", handler.AdminDeleteTopic)
+			r.Delete("/topics/{topic}/protection", handler.AdminUnprotectTopic)
+		})
 	})
 
 	staticDir := os.Getenv("STATIC_DIR")

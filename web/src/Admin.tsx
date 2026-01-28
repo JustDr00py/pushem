@@ -16,32 +16,41 @@ function Admin() {
   const [topics, setTopics] = useState<TopicInfo[]>([]);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState('');
 
   useEffect(() => {
-    // Check if we have a stored password
-    const storedPassword = sessionStorage.getItem('adminPassword');
-    if (storedPassword) {
-      verifyPassword(storedPassword);
+    // Check if we have a stored token
+    const storedToken = sessionStorage.getItem('adminToken');
+    if (storedToken) {
+      setToken(storedToken);
+      setIsAuthenticated(true);
+      loadTopics(storedToken);
     }
   }, []);
 
-  const verifyPassword = async (pwd: string) => {
+  const login = async (pwd: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/admin/verify`, {
+      const response = await fetch(`${API_BASE}/api/admin/login`, {
         method: 'POST',
         headers: {
-          'X-Admin-Password': pwd,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ password: pwd }),
       });
 
       if (response.ok) {
-        setPassword(pwd);
-        sessionStorage.setItem('adminPassword', pwd);
+        const data = await response.json();
+        const token = data.token;
+
+        setToken(token);
+        sessionStorage.setItem('adminToken', token);
         setIsAuthenticated(true);
-        loadTopics(pwd);
+        setPassword('');
+        loadTopics(token);
       } else {
-        sessionStorage.removeItem('adminPassword');
-        setStatus('Invalid password');
+        sessionStorage.removeItem('adminToken');
+        const errorText = await response.text();
+        setStatus(errorText || 'Invalid password');
         setTimeout(() => setStatus(''), 3000);
       }
     } catch (error) {
@@ -52,21 +61,25 @@ function Admin() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await verifyPassword(password);
+    await login(password);
   };
 
-  const loadTopics = async (pwd: string) => {
+  const loadTopics = async (authToken: string) => {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/api/admin/topics`, {
         headers: {
-          'X-Admin-Password': pwd,
+          'Authorization': `Bearer ${authToken}`,
         },
       });
 
       if (response.ok) {
         const data = await response.json();
         setTopics(data || []);
+      } else if (response.status === 401) {
+        // Token expired or invalid
+        setStatus('Session expired. Please login again.');
+        handleLogout();
       } else {
         setStatus('Failed to load topics');
         setTimeout(() => setStatus(''), 3000);
@@ -88,13 +101,16 @@ function Admin() {
       const response = await fetch(`${API_BASE}/api/admin/topics/${encodeURIComponent(topicName)}`, {
         method: 'DELETE',
         headers: {
-          'X-Admin-Password': password,
+          'Authorization': `Bearer ${token}`,
         },
       });
 
       if (response.ok) {
         setStatus(`Topic "${topicName}" deleted successfully`);
-        loadTopics(password);
+        loadTopics(token);
+      } else if (response.status === 401) {
+        setStatus('Session expired. Please login again.');
+        handleLogout();
       } else {
         setStatus('Failed to delete topic');
       }
@@ -114,13 +130,16 @@ function Admin() {
       const response = await fetch(`${API_BASE}/api/admin/topics/${encodeURIComponent(topicName)}/protection`, {
         method: 'DELETE',
         headers: {
-          'X-Admin-Password': password,
+          'Authorization': `Bearer ${token}`,
         },
       });
 
       if (response.ok) {
         setStatus(`Protection removed from "${topicName}"`);
-        loadTopics(password);
+        loadTopics(token);
+      } else if (response.status === 401) {
+        setStatus('Session expired. Please login again.');
+        handleLogout();
       } else {
         setStatus('Failed to remove protection');
       }
@@ -132,9 +151,10 @@ function Admin() {
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem('adminPassword');
+    sessionStorage.removeItem('adminToken');
     setIsAuthenticated(false);
     setPassword('');
+    setToken('');
     setTopics([]);
   };
 
@@ -215,7 +235,7 @@ function Admin() {
                 Main Page
               </button>
               <button
-                onClick={() => loadTopics(password)}
+                onClick={() => loadTopics(token)}
                 disabled={loading}
                 className="py-2 px-4 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
               >
