@@ -50,6 +50,7 @@ func main() {
 	r.Post("/publish/{topic}", handler.Publish)
 	r.Get("/history/{topic}", handler.GetHistory)
 	r.Delete("/history/{topic}", handler.ClearHistory)
+	r.Post("/topics/{topic}/protect", handler.ProtectTopic)
 
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {

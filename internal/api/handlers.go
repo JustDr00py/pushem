@@ -42,10 +42,80 @@ type SubscribeRequest struct {
 	} `json:"keys"`
 }
 
+type ProtectTopicRequest struct {
+	Secret string `json:"secret"`
+}
+
+func (h *Handler) checkAuth(w http.ResponseWriter, r *http.Request, topic string) bool {
+	secret, err := h.db.GetTopicSecret(topic)
+	if err != nil {
+		log.Printf("Failed to get topic secret: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+
+	// Topic is public if no secret is set
+	if secret == "" {
+		return true
+	}
+
+	// Check header first
+	providedKey := r.Header.Get("X-Pushem-Key")
+	if providedKey == "" {
+		// Fallback to query param
+		providedKey = r.URL.Query().Get("key")
+	}
+
+	if providedKey != secret {
+		http.Error(w, "unauthorized: topic is protected", http.StatusUnauthorized)
+		return false
+	}
+
+	return true
+}
+
+func (h *Handler) ProtectTopic(w http.ResponseWriter, r *http.Request) {
+	topic := chi.URLParam(r, "topic")
+	if topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	var req ProtectTopicRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Secret == "" {
+		http.Error(w, "secret is required", http.StatusBadRequest)
+		return
+	}
+
+	// If already protected, check if authorized to change it
+	if !h.checkAuth(w, r, topic) {
+		return
+	}
+
+	if err := h.db.ProtectTopic(topic, req.Secret); err != nil {
+		log.Printf("Failed to protect topic: %v", err)
+		http.Error(w, "failed to protect topic", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "topic protected"})
+}
+
 func (h *Handler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	topic := chi.URLParam(r, "topic")
 	if topic == "" {
 		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	// Authorization check
+	if !h.checkAuth(w, r, topic) {
 		return
 	}
 
@@ -77,6 +147,11 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	topic := chi.URLParam(r, "topic")
 	if topic == "" {
 		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	// Authorization check
+	if !h.checkAuth(w, r, topic) {
 		return
 	}
 
@@ -165,6 +240,11 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authorization check
+	if !h.checkAuth(w, r, topic) {
+		return
+	}
+
 	messages, err := h.db.GetMessagesByTopic(topic)
 	if err != nil {
 		log.Printf("Failed to get messages: %v", err)
@@ -180,6 +260,11 @@ func (h *Handler) ClearHistory(w http.ResponseWriter, r *http.Request) {
 	topic := chi.URLParam(r, "topic")
 	if topic == "" {
 		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	// Authorization check
+	if !h.checkAuth(w, r, topic) {
 		return
 	}
 

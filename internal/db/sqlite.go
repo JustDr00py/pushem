@@ -55,9 +55,35 @@ func (db *DB) migrate() error {
 		message TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+	CREATE TABLE IF NOT EXISTS topics (
+		topic TEXT PRIMARY KEY,
+		secret TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := db.conn.Exec(query)
 	return err
+}
+
+func (db *DB) ProtectTopic(topic, secret string) error {
+	query := `
+	INSERT INTO topics (topic, secret)
+	VALUES (?, ?)
+	ON CONFLICT(topic) DO UPDATE SET
+		secret = excluded.secret
+	`
+	_, err := db.conn.Exec(query, topic, secret)
+	return err
+}
+
+func (db *DB) GetTopicSecret(topic string) (string, error) {
+	query := `SELECT secret FROM topics WHERE topic = ?`
+	var secret string
+	err := db.conn.QueryRow(query, topic).Scan(&secret)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return secret, err
 }
 
 func (db *DB) SaveSubscription(topic, endpoint, p256dh, auth string) error {

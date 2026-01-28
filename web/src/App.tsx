@@ -46,9 +46,10 @@ interface HistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   topic: string;
+  topicKey: string | undefined;
 }
 
-function HistoryModal({ isOpen, onClose, topic }: HistoryModalProps) {
+function HistoryModal({ isOpen, onClose, topic, topicKey }: HistoryModalProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -61,7 +62,12 @@ function HistoryModal({ isOpen, onClose, topic }: HistoryModalProps) {
   const fetchHistory = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/history/${encodeURIComponent(topic)}`);
+      const headers: Record<string, string> = {};
+      if (topicKey) headers['X-Pushem-Key'] = topicKey;
+
+      const response = await fetch(`${API_BASE}/history/${encodeURIComponent(topic)}`, {
+        headers,
+      });
       if (response.ok) {
         const data = await response.json();
         setMessages(data || []);
@@ -77,8 +83,12 @@ function HistoryModal({ isOpen, onClose, topic }: HistoryModalProps) {
     if (!confirm('Are you sure you want to clear all history for this topic?')) return;
 
     try {
+      const headers: Record<string, string> = {};
+      if (topicKey) headers['X-Pushem-Key'] = topicKey;
+
       const response = await fetch(`${API_BASE}/history/${encodeURIComponent(topic)}`, {
         method: 'DELETE',
+        headers,
       });
       if (response.ok) {
         setMessages([]);
@@ -147,15 +157,17 @@ function HistoryModal({ isOpen, onClose, topic }: HistoryModalProps) {
 
 function App() {
   const [topic, setTopic] = useState('');
+  const [topicKey, setTopicKey] = useState('');
   const [status, setStatus] = useState('');
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [activeHistoryTopic, setActiveHistoryTopic] = useState<string | null>(null);
   const [subscribedTopics, setSubscribedTopics] = useState<string[]>([]);
+  const [topicKeys, setTopicKeys] = useState<Record<string, string>>({});
 
   useEffect(() => {
     registerServiceWorker();
-    loadSubscribedTopics();
+    loadPersistedData();
   }, []);
 
   const registerServiceWorker = async () => {
@@ -170,17 +182,26 @@ function App() {
     }
   };
 
-  const loadSubscribedTopics = () => {
+  const loadPersistedData = () => {
     const topics = JSON.parse(localStorage.getItem('subscribedTopics') || '[]');
+    const keys = JSON.parse(localStorage.getItem('topicKeys') || '{}');
     setSubscribedTopics(topics);
+    setTopicKeys(keys);
   };
 
-  const saveSubscribedTopic = (topic: string) => {
+  const saveTopicData = (topic: string, key?: string) => {
     const topics = JSON.parse(localStorage.getItem('subscribedTopics') || '[]');
     if (!topics.includes(topic)) {
       topics.push(topic);
       localStorage.setItem('subscribedTopics', JSON.stringify(topics));
       setSubscribedTopics(topics);
+    }
+
+    if (key) {
+      const keys = JSON.parse(localStorage.getItem('topicKeys') || '{}');
+      keys[topic] = key;
+      localStorage.setItem('topicKeys', JSON.stringify(keys));
+      setTopicKeys(keys);
     }
   };
 
@@ -189,28 +210,44 @@ function App() {
     const filtered = topics.filter((t: string) => t !== topic);
     localStorage.setItem('subscribedTopics', JSON.stringify(filtered));
     setSubscribedTopics(filtered);
+
+    const keys = JSON.parse(localStorage.getItem('topicKeys') || '{}');
+    delete keys[topic];
+    localStorage.setItem('topicKeys', JSON.stringify(keys));
+    setTopicKeys(keys);
   };
 
-  const handleTestNotification = async (topic: string) => {
+  const getHeaders = (topicName: string) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const key = topicKeys[topicName];
+    if (key) {
+      headers['X-Pushem-Key'] = key;
+    }
+    return headers;
+  };
+
+  const handleTestNotification = async (topicName: string) => {
     try {
-      const response = await fetch(`${API_BASE}/publish/${encodeURIComponent(topic)}`, {
+      const response = await fetch(`${API_BASE}/publish/${encodeURIComponent(topicName)}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getHeaders(topicName),
         body: JSON.stringify({
           title: 'Test Notification',
-          message: `This is a test notification for topic "${topic}"`,
+          message: `This is a test notification for topic "${topicName}"`,
         }),
       });
 
       if (response.ok) {
         const result = await response.json();
         if (result.sent > 0) {
-          setStatus(`Test notification sent to "${topic}"!`);
+          setStatus(`Test notification sent to "${topicName}"!`);
         } else {
-          setStatus(`No active subscription found for "${topic}"`);
+          setStatus(`No active subscription found for "${topicName}"`);
         }
+      } else if (response.status === 401) {
+        setStatus(`Unauthorized: Incorrect key for "${topicName}"`);
       } else {
         setStatus('Failed to send test notification');
       }
@@ -221,15 +258,15 @@ function App() {
     }
   };
 
-  const handleUnsubscribe = async (topic: string) => {
+  const handleUnsubscribe = async (topicName: string) => {
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
         await subscription.unsubscribe();
-        removeSubscribedTopic(topic);
-        setStatus(`Unsubscribed from "${topic}"`);
+        removeSubscribedTopic(topicName);
+        setStatus(`Unsubscribed from "${topicName}"`);
         setTimeout(() => setStatus(''), 3000);
       }
     } catch (error) {
@@ -300,9 +337,14 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(topicKey ? { 'X-Pushem-Key': topicKey } : {}),
         },
         body: JSON.stringify(subscription.toJSON()),
       });
+
+      if (response.status === 401) {
+        throw new Error('Unauthorized: Topic is protected and key is missing or incorrect');
+      }
 
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);
@@ -310,13 +352,39 @@ function App() {
 
       setStatus(`Successfully subscribed to "${topic}"!`);
       setIsSubscribed(true);
-      saveSubscribedTopic(topic);
+      saveTopicData(topic, topicKey);
 
       setTimeout(() => {
         setStatus('');
       }, 3000);
     } catch (error) {
       console.error('Subscription failed:', error);
+      setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const handleProtectTopic = async (topicName: string) => {
+    const key = prompt(`Set a secret key for topic "${topicName}":`);
+    if (!key) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/topics/${encodeURIComponent(topicName)}/protect`, {
+        method: 'POST',
+        headers: getHeaders(topicName),
+        body: JSON.stringify({ secret: key }),
+      });
+
+      if (response.ok) {
+        saveTopicData(topicName, key);
+        setStatus(`Topic "${topicName}" is now protected!`);
+      } else if (response.status === 401) {
+        setStatus('Unauthorized: You need the current key to change it');
+      } else {
+        setStatus('Failed to protect topic');
+      }
+
+      setTimeout(() => setStatus(''), 3000);
+    } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
@@ -358,19 +426,36 @@ function App() {
             </div>
           )}
 
-          <div>
-            <label htmlFor="topic" className="block text-sm font-medium text-gray-700 mb-2">
-              Topic Name
-            </label>
-            <input
-              id="topic"
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., my-alerts"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent outline-none text-gray-900"
-              disabled={isSubscribed}
-            />
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="topic" className="block text-sm font-medium text-gray-700 mb-1">
+                Topic Name
+              </label>
+              <input
+                id="topic"
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g., my-alerts"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent outline-none text-gray-900"
+                disabled={isSubscribed}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="topicKey" className="block text-sm font-medium text-gray-700 mb-1">
+                Secret Key (optional)
+              </label>
+              <input
+                id="topicKey"
+                type="password"
+                value={topicKey}
+                onChange={(e) => setTopicKey(e.target.value)}
+                placeholder="Required if topic is protected"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent outline-none text-gray-900"
+                disabled={isSubscribed}
+              />
+            </div>
           </div>
 
           <button
@@ -428,7 +513,7 @@ function App() {
                       onClick={() => handleTestNotification(t)}
                       className="flex-1 py-1.5 px-3 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                     >
-                      Send Test
+                      Test
                     </button>
                     <button
                       onClick={() => setActiveHistoryTopic(t)}
@@ -436,6 +521,14 @@ function App() {
                     >
                       History
                     </button>
+                    {!topicKeys[t] && (
+                      <button
+                        onClick={() => handleProtectTopic(t)}
+                        className="flex-1 py-1.5 px-3 text-xs font-medium bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors"
+                      >
+                        Protect
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (confirm(`Unsubscribe from "${t}"?`)) {
@@ -444,7 +537,7 @@ function App() {
                       }}
                       className="flex-1 py-1.5 px-3 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                     >
-                      Unsubscribe
+                      Del
                     </button>
                   </div>
                 </div>
@@ -460,11 +553,14 @@ function App() {
             <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
               {`curl -X POST ${API_BASE}/publish/${subscribedTopics[0] || 'YOUR_TOPIC'} \\
   -H "Content-Type: application/json" \\
-  -d '{"title":"Hello","message":"Test!"}'`}
+  ${topicKeys[subscribedTopics[0]] ? `-H "X-Pushem-Key: ${topicKeys[subscribedTopics[0]]}" \\
+  ` : ''}-d '{"title":"Hello","message":"Test!"}'`}
             </pre>
             <button
               onClick={() => {
-                const cmd = `curl -X POST ${API_BASE}/publish/${subscribedTopics[0] || 'YOUR_TOPIC'} -H "Content-Type: application/json" -d '{"title":"Hello","message":"Test!"}'`;
+                const activeTopic = subscribedTopics[0] || 'YOUR_TOPIC';
+                const key = topicKeys[activeTopic];
+                const cmd = `curl -X POST ${API_BASE}/publish/${activeTopic} -H "Content-Type: application/json" ${key ? `-H "X-Pushem-Key: ${key}" ` : ''}-d '{"title":"Hello","message":"Test!"}'`;
                 navigator.clipboard.writeText(cmd);
                 setStatus('Copied to clipboard!');
                 setTimeout(() => setStatus(''), 2000);
@@ -473,27 +569,6 @@ function App() {
             >
               Copy
             </button>
-          </div>
-
-          <div className="mt-4">
-            <p className="text-xs text-gray-500 mb-2">Or send plain text:</p>
-            <div className="relative">
-              <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-                {`curl -X POST ${API_BASE}/publish/${subscribedTopics[0] || 'YOUR_TOPIC'} \\
-  -d "Your message here"`}
-              </pre>
-              <button
-                onClick={() => {
-                  const cmd = `curl -X POST ${API_BASE}/publish/${subscribedTopics[0] || 'YOUR_TOPIC'} -d "Your message here"`;
-                  navigator.clipboard.writeText(cmd);
-                  setStatus('Copied to clipboard!');
-                  setTimeout(() => setStatus(''), 2000);
-                }}
-                className="absolute top-2 right-2 px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
-              >
-                Copy
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -505,6 +580,7 @@ function App() {
           isOpen={true}
           onClose={() => setActiveHistoryTopic(null)}
           topic={activeHistoryTopic}
+          topicKey={topicKeys[activeHistoryTopic]}
         />
       )}
     </div>
