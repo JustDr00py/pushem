@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -166,6 +167,8 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Push service error response: %s", string(body))
 		return fmt.Errorf("push service returned status: %d", resp.StatusCode)
 	}
 
