@@ -133,10 +133,10 @@ func (s *Service) SendNotification(endpoint, p256dh, auth string, payload Notifi
 	}
 
 	resp, err := webpush.SendNotification(payloadBytes, sub, &webpush.Options{
-		Subscriber:      "mailto:admin@pushem.local",
+		Subscriber:      "mailto:admin@example.com",
 		VAPIDPrivateKey: s.privateKey,
 		VAPIDPublicKey:  s.publicKey,
-		TTL:             30,
+		TTL:             86400,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
