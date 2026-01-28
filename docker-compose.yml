@@ -15,6 +15,8 @@ services:
       - VAPID_SUBJECT=${VAPID_SUBJECT}
       - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-7}    # Keep messages for 7 days (default)
       - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-24}   # Run cleanup every 24 hours (default)
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}                       # Admin panel password
+      - ADMIN_TOKEN_EXPIRY_MINUTES=${ADMIN_TOKEN_EXPIRY_MINUTES:-60}  # Token expiry (default: 60 min)
     command: sh -c "cd data && ../pushem"
     restart: unless-stopped
     networks:
