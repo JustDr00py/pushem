@@ -164,6 +164,7 @@ function App() {
   const [activeHistoryTopic, setActiveHistoryTopic] = useState<string | null>(null);
   const [subscribedTopics, setSubscribedTopics] = useState<string[]>([]);
   const [topicKeys, setTopicKeys] = useState<Record<string, string>>({});
+  const [selectedApiTopic, setSelectedApiTopic] = useState<string>('');
 
   useEffect(() => {
     registerServiceWorker();
@@ -187,6 +188,9 @@ function App() {
     const keys = JSON.parse(localStorage.getItem('topicKeys') || '{}');
     setSubscribedTopics(topics);
     setTopicKeys(keys);
+    if (topics.length > 0) {
+      setSelectedApiTopic(topics[0]);
+    }
   };
 
   const saveTopicData = (topic: string, key?: string) => {
@@ -390,6 +394,7 @@ function App() {
 
       if (response.ok) {
         saveTopicData(topicName, key);
+        setSelectedApiTopic(topicName);
         setStatus(`Topic "${topicName}" is now protected!`);
       } else if (response.status === 401) {
         setStatus('Unauthorized: You need the current key to change it');
@@ -519,7 +524,11 @@ function App() {
             <div className="space-y-3">
               {subscribedTopics.map((t) => (
                 <div key={t} className="bg-gray-50 px-4 py-3 rounded-lg border border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
+                  <div
+                    className={`flex items-center justify-between mb-2 cursor-pointer p-1 rounded transition-colors ${selectedApiTopic === t ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-100'}`}
+                    onClick={() => setSelectedApiTopic(t)}
+                    title="Click to see API usage"
+                  >
                     <span className="text-sm font-medium text-gray-900 font-mono">{t}</span>
                     <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">Active</span>
                   </div>
@@ -566,14 +575,14 @@ function App() {
           <p className="text-xs text-gray-500 mb-2">Send notifications from the command line:</p>
           <div className="relative">
             <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
-              {`curl -X POST ${API_BASE}/publish/${subscribedTopics[0] || 'YOUR_TOPIC'} \\
+              {`curl -X POST ${API_BASE}/publish/${selectedApiTopic || 'YOUR_TOPIC'} \\
   -H "Content-Type: application/json" \\
-  ${topicKeys[subscribedTopics[0]] ? `-H "X-Pushem-Key: ${topicKeys[subscribedTopics[0]]}" \\
+  ${topicKeys[selectedApiTopic] ? `-H "X-Pushem-Key: ${topicKeys[selectedApiTopic]}" \\
   ` : ''}-d '{"title":"Hello","message":"Test!"}'`}
             </pre>
             <button
               onClick={() => {
-                const activeTopic = subscribedTopics[0] || 'YOUR_TOPIC';
+                const activeTopic = selectedApiTopic || 'YOUR_TOPIC';
                 const key = topicKeys[activeTopic];
                 const cmd = `curl -X POST ${API_BASE}/publish/${activeTopic} -H "Content-Type: application/json" ${key ? `-H "X-Pushem-Key: ${key}" ` : ''}-d '{"title":"Hello","message":"Test!"}'`;
                 navigator.clipboard.writeText(cmd);
