@@ -121,6 +121,43 @@ function Admin() {
     }
   };
 
+  const handleProtectTopic = async (topicName: string) => {
+    const secret = prompt(`Enter a secret key to protect topic "${topicName}" (min 8 characters):`);
+    if (!secret) return;
+
+    if (secret.length < 8) {
+      setStatus('Secret must be at least 8 characters');
+      setTimeout(() => setStatus(''), 3000);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/topics/${encodeURIComponent(topicName)}/protect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ secret }),
+      });
+
+      if (response.ok) {
+        setStatus(`Topic "${topicName}" is now protected`);
+        loadTopics(token);
+      } else if (response.status === 401) {
+        setStatus('Session expired. Please login again.');
+        handleLogout();
+      } else {
+        const errorText = await response.text();
+        setStatus(errorText || 'Failed to protect topic');
+      }
+      setTimeout(() => setStatus(''), 3000);
+    } catch (error) {
+      setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setTimeout(() => setStatus(''), 3000);
+    }
+  };
+
   const handleUnprotectTopic = async (topicName: string) => {
     if (!confirm(`Remove protection from topic "${topicName}"?`)) {
       return;
@@ -302,12 +339,19 @@ function Admin() {
                         )}
                       </div>
                       <div className="flex gap-2">
-                        {topic.is_protected && (
+                        {topic.is_protected ? (
                           <button
                             onClick={() => handleUnprotectTopic(topic.name)}
                             className="py-1.5 px-3 text-sm font-medium bg-yellow-600 text-white rounded hover:bg-yellow-700"
                           >
                             Unprotect
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleProtectTopic(topic.name)}
+                            className="py-1.5 px-3 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700"
+                          >
+                            Protect
                           </button>
                         )}
                         <button
