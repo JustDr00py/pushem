@@ -8,6 +8,10 @@
 
 # Default configuration - change pushem.example.com to your domain
 pushem.example.com {
+    # Block suspicious HTTP methods (prevent proxy abuse)
+    @blocked_methods method CONNECT TRACE
+    respond @blocked_methods "Method not allowed" 405
+
     # Reverse proxy to Pushem service
     reverse_proxy pushem:8080
 
