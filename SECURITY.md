@@ -62,18 +62,32 @@ Notification messages are validated for:
 Topic protection secrets are validated for:
 - **Minimum length**: 8 characters
 - **Maximum length**: 256 characters
+- **Allowed characters**: Letters (a-z, A-Z), numbers (0-9), hyphens (-), underscores (_), dots (.)
+- **No special characters**: Special characters like `!@#$%^&*()` are blocked to prevent API issues
 - **UTF-8 validation**: Ensures valid character encoding
 - **Weak password detection**: Blocks common weak passwords (password, 12345678, qwertyui)
 
 **Example:**
 ```bash
-# Weak secret rejected
-curl -X POST http://localhost:8080/protect/my-topic \
-  -d '{"secret": "password"}'  # Returns: 400 Bad Request
+# Weak secret rejected (too short)
+curl -X POST http://localhost:8080/topics/my-topic/protect \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "short"}'  # Returns: 400 Bad Request
 
-# Strong secret accepted
-curl -X POST http://localhost:8080/protect/my-topic \
-  -d '{"secret": "my-super-secure-key-2024!"}'  # Success
+# Invalid characters rejected
+curl -X POST http://localhost:8080/topics/my-topic/protect \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "my-pass@2024!"}'  # Returns: 400 Bad Request (special chars)
+
+# Valid secret accepted
+curl -X POST http://localhost:8080/topics/my-topic/protect \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "my-super-secure-key-2024"}'  # Success
+
+# Another valid example
+curl -X POST http://localhost:8080/topics/my-topic/protect \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "MyTopic_Key.v1.2024"}'  # Success
 ```
 
 ### Endpoint URL Validation

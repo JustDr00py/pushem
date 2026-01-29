@@ -20,6 +20,10 @@ var (
 	// Topic names: alphanumeric, hyphens, underscores, dots
 	topicRegex = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
+	// Secret keys: alphanumeric, hyphens, underscores, dots (safe for HTTP headers)
+	// Avoids special characters that could cause issues with headers or URL encoding
+	secretRegex = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+
 	// Forbidden topic names (reserved for system use)
 	forbiddenTopics = map[string]bool{
 		"admin":   true,
@@ -117,6 +121,12 @@ func ValidateSecret(secret string) error {
 
 	if !utf8.ValidString(secret) {
 		return &ValidationError{"secret", "secret contains invalid UTF-8"}
+	}
+
+	// Only allow safe characters (alphanumeric, hyphens, underscores, dots)
+	// This prevents issues with HTTP headers, URL encoding, and API parsing
+	if !secretRegex.MatchString(secret) {
+		return &ValidationError{"secret", "secret can only contain letters, numbers, hyphens, underscores, and dots"}
 	}
 
 	// Warn about weak secrets (common patterns)

@@ -364,8 +364,22 @@ function App() {
   };
 
   const handleProtectTopic = async (topicName: string) => {
-    const key = prompt(`Set a secret key for topic "${topicName}":`);
+    const key = prompt(`Set a secret key for topic "${topicName}":\n\n- Min 8 characters\n- Only letters, numbers, hyphens, underscores, dots\n- No special characters (!@#$%^&* etc.)`);
     if (!key) return;
+
+    // Validate length
+    if (key.length < 8) {
+      setStatus('Secret must be at least 8 characters');
+      setTimeout(() => setStatus(''), 3000);
+      return;
+    }
+
+    // Validate format (alphanumeric, hyphens, underscores, dots only)
+    if (!/^[a-zA-Z0-9_.-]+$/.test(key)) {
+      setStatus('Secret can only contain letters, numbers, hyphens, underscores, and dots');
+      setTimeout(() => setStatus(''), 3000);
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE}/topics/${encodeURIComponent(topicName)}/protect`, {
@@ -380,7 +394,8 @@ function App() {
       } else if (response.status === 401) {
         setStatus('Unauthorized: You need the current key to change it');
       } else {
-        setStatus('Failed to protect topic');
+        const errorText = await response.text();
+        setStatus(errorText || 'Failed to protect topic');
       }
 
       setTimeout(() => setStatus(''), 3000);

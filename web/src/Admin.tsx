@@ -122,11 +122,18 @@ function Admin() {
   };
 
   const handleProtectTopic = async (topicName: string) => {
-    const secret = prompt(`Enter a secret key to protect topic "${topicName}" (min 8 characters):`);
+    const secret = prompt(`Enter a secret key to protect topic "${topicName}":\n\n- Min 8 characters\n- Only letters, numbers, hyphens, underscores, dots\n- No special characters (!@#$%^&* etc.)`);
     if (!secret) return;
 
     if (secret.length < 8) {
       setStatus('Secret must be at least 8 characters');
+      setTimeout(() => setStatus(''), 3000);
+      return;
+    }
+
+    // Validate secret format (alphanumeric, hyphens, underscores, dots only)
+    if (!/^[a-zA-Z0-9_.-]+$/.test(secret)) {
+      setStatus('Secret can only contain letters, numbers, hyphens, underscores, and dots');
       setTimeout(() => setStatus(''), 3000);
       return;
     }

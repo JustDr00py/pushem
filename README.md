@@ -459,15 +459,16 @@ Pushem includes comprehensive security features:
 - **Topic Protection**: Optional secret keys to protect topics from unauthorized access
   - Secrets are hashed with bcrypt before storage (never stored in plain text)
   - Provides defense in depth if database is compromised
+  - **Allowed characters**: Letters, numbers, hyphens, underscores, dots (no special chars)
   ```bash
-  # Protect a topic (minimum 8 characters)
+  # Protect a topic (min 8 chars, alphanumeric + -_.)
   curl -X POST http://localhost:8080/topics/my-topic/protect \
     -H "Content-Type: application/json" \
-    -d '{"secret": "your-secret-key"}'
+    -d '{"secret": "my-secure-key-2024"}'
 
   # Publish with authentication
   curl -X POST http://localhost:8080/publish/my-topic \
-    -H "X-Pushem-Key: your-secret-key" \
+    -H "X-Pushem-Key: my-secure-key-2024" \
     -d "Protected message"
   ```
 
