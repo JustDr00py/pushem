@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -538,6 +539,55 @@ func (h *Handler) ClearHistory(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "history cleared"})
+}
+
+func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	topic := chi.URLParam(r, "topic")
+	if topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+
+	messageIDStr := chi.URLParam(r, "messageId")
+	if messageIDStr == "" {
+		http.Error(w, "message ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate topic name
+	if err := validation.ValidateTopic(topic); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Parse message ID
+	messageID, err := strconv.Atoi(messageIDStr)
+	if err != nil {
+		http.Error(w, "invalid message ID", http.StatusBadRequest)
+		return
+	}
+
+	// Authorization check
+	if !h.checkAuth(w, r, topic) {
+		return
+	}
+
+	// Delete the message
+	if err := h.db.DeleteMessage(topic, messageID); err != nil {
+		log.Printf("Failed to delete message %d from topic '%s': %v", messageID, topic, err)
+
+		// Return appropriate status code based on error
+		if err.Error() == "message not found" || err.Error() == "message does not belong to topic" {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, "failed to delete message", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	log.Printf("Deleted message %d from topic '%s'", messageID, topic)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "message deleted"})
 }
 
 // Admin authentication middleware - validates JWT tokens

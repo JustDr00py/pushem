@@ -206,6 +206,42 @@ func (db *DB) ClearMessages(topic string) error {
 	return err
 }
 
+// DeleteMessage deletes a single message by ID, ensuring it belongs to the specified topic
+func (db *DB) DeleteMessage(topic string, messageID int) error {
+	// First, verify the message exists and belongs to this topic
+	var existingTopic string
+	err := db.conn.QueryRow("SELECT topic FROM messages WHERE id = ?", messageID).Scan(&existingTopic)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("message not found")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to verify message: %w", err)
+	}
+
+	// Check if message belongs to the specified topic (security check)
+	if existingTopic != topic {
+		return fmt.Errorf("message does not belong to topic")
+	}
+
+	// Delete the message
+	query := `DELETE FROM messages WHERE id = ? AND topic = ?`
+	result, err := db.conn.Exec(query, messageID, topic)
+	if err != nil {
+		return fmt.Errorf("failed to delete message: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check deletion: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("message not found or already deleted")
+	}
+
+	return nil
+}
+
 func (db *DB) DeleteOldMessages(daysOld int) (int64, error) {
 	query := `DELETE FROM messages WHERE created_at < datetime('now', ?)`
 	result, err := db.conn.Exec(query, fmt.Sprintf("-%d days", daysOld))

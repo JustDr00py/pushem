@@ -153,6 +153,7 @@ func main() {
 	r.Post("/publish/{topic}", handler.Publish)
 	r.Get("/history/{topic}", handler.GetHistory)
 	r.Delete("/history/{topic}", handler.ClearHistory)
+	r.Delete("/history/{topic}/{messageId}", handler.DeleteMessage)
 	r.Post("/topics/{topic}/protect", handler.ProtectTopic)
 
 	// Admin routes

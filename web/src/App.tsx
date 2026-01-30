@@ -98,6 +98,30 @@ function HistoryModal({ isOpen, onClose, topic, topicKey }: HistoryModalProps) {
     }
   };
 
+  const deleteMessage = async (messageId: number) => {
+    try {
+      const headers: Record<string, string> = {};
+      if (topicKey) headers['X-Pushem-Key'] = topicKey;
+
+      const response = await fetch(
+        `${API_BASE}/history/${encodeURIComponent(topic)}/${messageId}`,
+        {
+          method: 'DELETE',
+          headers,
+        }
+      );
+
+      if (response.ok) {
+        // Remove message from UI optimistically
+        setMessages(messages.filter((msg) => msg.ID !== messageId));
+      } else {
+        console.error('Failed to delete message:', response.status);
+      }
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -122,9 +146,21 @@ function HistoryModal({ isOpen, onClose, topic, topicKey }: HistoryModalProps) {
               <div key={msg.ID} className="bg-gray-50 p-3 rounded border border-gray-200">
                 <div className="flex justify-between items-start mb-1">
                   <h3 className="font-medium text-gray-900">{msg.Title || 'Notification'}</h3>
-                  <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
-                    {new Date(msg.CreatedAt).toLocaleString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                      {new Date(msg.CreatedAt).toLocaleString()}
+                    </span>
+                    <button
+                      onClick={() => deleteMessage(msg.ID)}
+                      className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"
+                      title="Delete message"
+                      aria-label="Delete message"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm text-gray-600 break-words">{msg.Message}</p>
               </div>
