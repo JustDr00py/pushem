@@ -236,16 +236,23 @@ type TopicInfo struct {
 
 // ListAllTopics returns all topics with their metadata
 func (db *DB) ListAllTopics() ([]TopicInfo, error) {
-	// Get all unique topics from subscriptions
+	// Get all unique topics from both subscriptions and topics tables
 	query := `
-		SELECT DISTINCT s.topic,
+		WITH all_topics AS (
+			SELECT DISTINCT topic FROM subscriptions
+			UNION
+			SELECT DISTINCT topic FROM topics
+		)
+		SELECT
+			at.topic,
 			CASE WHEN t.secret IS NOT NULL THEN 1 ELSE 0 END as is_protected,
-			COUNT(s.id) as subscription_count,
+			COALESCE(COUNT(s.id), 0) as subscription_count,
 			t.created_at
-		FROM subscriptions s
-		LEFT JOIN topics t ON s.topic = t.topic
-		GROUP BY s.topic
-		ORDER BY s.topic ASC
+		FROM all_topics at
+		LEFT JOIN topics t ON at.topic = t.topic
+		LEFT JOIN subscriptions s ON at.topic = s.topic
+		GROUP BY at.topic
+		ORDER BY at.topic ASC
 	`
 
 	rows, err := db.conn.Query(query)
